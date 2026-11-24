@@ -35,7 +35,44 @@ function duration(seconds) {
   return h ? `${h} h ${m} min` : `${m} min`;
 }
 
+const isMedia = (type) => type === 'movie' || type === 'tv';
+const MEDIA_STAMPS = { available: 'On Jellyfin', partial: 'Partly on Jellyfin', requested: 'Requested' };
+
+// Movies and TV: a Request button, or a stamp saying where the title stands.
+function mediaAction(item) {
+  if (item.state === 'blocked') return el('div', { className: 'act' }, el('span', { textContent: 'Not available' }));
+  if (MEDIA_STAMPS[item.state]) {
+    const stamp = el('span', { className: 'stamp', textContent: MEDIA_STAMPS[item.state] });
+    if (item.fresh) { stamp.classList.add('fresh'); item.fresh = false; }
+    return el('div', { className: 'act' }, stamp);
+  }
+  const button = el('button', { type: 'button', textContent: 'Request' });
+  button.addEventListener('click', () => requestMedia(item, button));
+  return el('div', { className: 'act' }, button);
+}
+
+async function requestMedia(item, button) {
+  button.disabled = true;
+  try {
+    const { state } = await api('/api/request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: lastType, id: item.id }),
+    });
+    item.state = 'requested';
+    item.fresh = true;
+    say(state === 'exists'
+      ? `"${item.title}" was already requested.`
+      : `Requested "${item.title}". It appears on Jellyfin once it has downloaded.`);
+    renderResults();
+  } catch (err) {
+    button.disabled = false;
+    say(err.message, true);
+  }
+}
+
 function actionFor(item) {
+  if (isMedia(lastType)) return mediaAction(item);
   const job = jobs.find((j) => j.key === `${lastType}:${item.id}`);
   if (!job || job.state === 'failed') {
     const button = el('button', { type: 'button', textContent: 'Add to shelf' });
@@ -68,6 +105,7 @@ async function renderShelf() {
     const kinds = document.querySelector('.kinds');
     kinds.hidden = types.length < 2;
     for (const radio of kinds.querySelectorAll('input')) radio.closest('label').hidden = !types.includes(radio.value);
+    if (types.includes('movie')) $('lede').textContent = 'Audiobooks, movies and TV in one place.';
     $('listen').replaceChildren(...(listenUrl
       ? [el('a', { href: listenUrl, textContent: 'Listen or read in the browser' })]
       : []));
@@ -133,10 +171,11 @@ form.addEventListener('submit', async (event) => {
   const q = String(data.get('q')).trim();
   if (!q) return;
   lastType = String(data.get('type'));
-  say('Searching the catalog');
+  say(isMedia(lastType) ? 'Searching' : 'Searching the catalog');
   try {
     lastResults = (await api(`/api/search?type=${encodeURIComponent(lastType)}&q=${encodeURIComponent(q)}`)).results;
-    say(lastResults.length ? '' : `Nothing in the catalog matches "${q}". Try the author's last name.`);
+    const nothing = isMedia(lastType) ? `Nothing matches "${q}".` : `Nothing in the catalog matches "${q}". Try the author's last name.`;
+    say(lastResults.length ? '' : nothing);
     renderResults();
   } catch (err) {
     lastResults = [];
@@ -183,6 +222,13 @@ $('prowlarr-search').addEventListener('submit', async (event) => {
     tell(err.message, true);
   }
 });
+
+// The search box hint follows the kind being searched.
+for (const radio of form.querySelectorAll('input[name="type"]')) {
+  radio.addEventListener('change', () => {
+    $('q').placeholder = isMedia(radio.value) ? 'Title' : 'Title or author';
+  });
+}
 
 refreshJobs().catch(() => {});
 renderShelf();

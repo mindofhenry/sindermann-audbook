@@ -19,6 +19,9 @@ const SECURITY = {
 const MAX_WAITING = 5;
 const KEEP_JOBS = 30;
 const MAX_PROWLARR_SEARCHES = 2; // at once, so the page cannot hammer the indexers
+const MEDIA_TYPES = ['movie', 'tv'];
+const MAX_REQUESTS_PER_DAY = 10; // per person, so one click-happy friend cannot fill the disk
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -28,12 +31,22 @@ class HttpError extends Error {
  * @param {{ catalog: object, library: object, listenUrl?: string|null,
  *           addBook: (type: string, plan: object, onProgress: Function) => Promise<{status: string}>,
  *           prowlarr?: { search: (query: string) => Promise<object[]> } | null,
- *           log?: Function }} deps
+ *           seerr?: { search: Function, request: Function } | null,
+ *           now?: () => number, log?: Function }} deps
  */
-export function createPortal({ catalog, library, addBook, listenUrl = null, prowlarr = null, log = () => {} }) {
+export function createPortal({ catalog, library, addBook, listenUrl = null, prowlarr = null, seerr = null, now = Date.now, log = () => {} }) {
   const jobs = new Map(); // key -> job, insertion order = age
   let chain = Promise.resolve(); // downloads run one at a time
   let prowlarrSearches = 0;
+  const requestTimes = new Map(); // person -> times of their requests in the last day
+
+  // A browser on another site must not be able to trigger anything here.
+  function guardPost(req) {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Send JSON.');
+    if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) {
+      throw new HttpError(403, 'Requests from other sites are not allowed.');
+    }
+  }
 
   function enqueue(type, id, plan, by) {
     const key = `${type}:${id}`;
@@ -65,19 +78,42 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, prow
 
   const routes = {
     'GET /api/search': async (req, url) => {
+      const type = url.searchParams.get('type');
+      const source = seerr && MEDIA_TYPES.includes(type) ? seerr : catalog;
       try {
-        return { results: await catalog.search(url.searchParams.get('type'), url.searchParams.get('q')) };
+        return { results: await source.search(type, url.searchParams.get('q')) };
       } catch (err) {
         throw new HttpError(/type/i.test(err.message) ? 400 : 502, err.message);
       }
     },
 
-    'POST /api/add': async (req) => {
-      if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Send JSON.');
-      // A browser on another site must not be able to trigger a download.
-      if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) {
-        throw new HttpError(403, 'Requests from other sites are not allowed.');
+    // Movies and TV: file a request with Seerr. What happens next is Seerr's business.
+    'POST /api/request': async (req) => {
+      if (!seerr) throw new HttpError(404, 'Movie and TV requests are not set up.');
+      guardPost(req);
+      const { type, id } = await readJson(req);
+      const who = req.headers['cf-access-authenticated-user-email'] ?? 'unknown';
+      const recent = (requestTimes.get(who) ?? []).filter((at) => now() - at < DAY_MS);
+      if (recent.length >= MAX_REQUESTS_PER_DAY) {
+        throw new HttpError(429, `You have made ${MAX_REQUESTS_PER_DAY} requests in the last day. Try again tomorrow.`);
       }
+      let result;
+      try {
+        result = await seerr.request(type, id);
+      } catch (err) {
+        log(`[portal] request failed: ${type} ${id} for ${who}: ${err.message}`);
+        throw new HttpError(502, err.message);
+      }
+      if (result.status === 'requested') {
+        requestTimes.set(who, [...recent, now()]);
+        log(`[portal] requested: ${type} ${id} for ${who}`);
+      }
+      // "state", not "status": the latter is how a route sets its HTTP status.
+      return { state: result.status };
+    },
+
+    'POST /api/add': async (req) => {
+      guardPost(req);
       const { type, id } = await readJson(req);
       let plan;
       try {
@@ -108,7 +144,7 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, prow
     'GET /api/library': async () => ({
       listenUrl,
       prowlarr: Boolean(prowlarr),
-      types: catalog.types,
+      types: [...catalog.types, ...(seerr ? MEDIA_TYPES : [])],
       books: library.books.map((b) => ({ title: b.title, duration: Math.round(b.timeline.duration), chapters: b.timeline.chapters.length })),
     }),
 

@@ -8,6 +8,7 @@ import { scanLibrary } from './library.js';
 import { createCatalog } from './portal/catalog.js';
 import { createPortal } from './portal/server.js';
 import { createProwlarr } from './portal/prowlarr.js';
+import { createSeerr } from './portal/seerr.js';
 import { addToShelf } from './portal/shelf.js';
 import { createPresenceWatcher } from './presence.js';
 import { registerCommands } from './register.js';
@@ -125,11 +126,13 @@ if (config.portalPort) {
     library,
     listenUrl: config.listenUrl,
     prowlarr: config.prowlarr ? createProwlarr(config.prowlarr) : null,
+    seerr: config.jellyseerr ? createSeerr(config.jellyseerr) : null,
     log: console.log,
     addBook: (type, plan, onProgress) => addToShelf(plan, shelves[type].root, { allowedHosts: shelves[type].allowedHosts, onProgress }),
   });
   portal.server.listen(config.portalPort, () => console.log(`[portal] homepage listening on port ${config.portalPort}`));
   if (config.prowlarr) console.log(`[portal] Prowlarr search on (${new URL(config.prowlarr.url).host})`);
+  if (config.jellyseerr) console.log(`[portal] movies and TV on (${new URL(config.jellyseerr.url).host})`);
 }
 
 const saver = setInterval(() => sessions.saveAll(), SAVE_EVERY_MS);

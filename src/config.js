@@ -28,6 +28,7 @@ export function loadConfig(env = process.env) {
   return {
     token,
     prowlarr: loadProwlarr(env),
+    jellyseerr: loadJellyseerr(env),
     // Optional: limit slash commands to one server. By default they are
     // registered in every server the bot is in.
     guildId: env.GUILD_ID?.trim() || null,
@@ -65,4 +66,25 @@ function loadProwlarr(env) {
   }
 
   return { url, apiKey, indexerIds: ids.map(Number), accessId, accessSecret };
+}
+
+// Optional movies and TV on the homepage, through a Seerr / Jellyseerr server.
+function loadJellyseerr(env) {
+  const url = env.JELLYSEERR_URL?.trim();
+  if (!url) return null;
+  if (!/^https?:\/\//i.test(url)) throw new Error('JELLYSEERR_URL must start with http:// or https://.');
+
+  const apiKey = env.JELLYSEERR_API_KEY?.trim();
+  if (!apiKey) throw new Error('JELLYSEERR_API_KEY is not set. Copy it from Jellyseerr > Settings > General > API Key.');
+
+  const user = env.JELLYSEERR_USER_ID?.trim();
+  if (user && !/^\d+$/.test(user)) throw new Error('JELLYSEERR_USER_ID must be a user number, for example 7.');
+
+  const accessId = env.JELLYSEERR_CF_ACCESS_CLIENT_ID?.trim() || null;
+  const accessSecret = env.JELLYSEERR_CF_ACCESS_CLIENT_SECRET?.trim() || null;
+  if (Boolean(accessId) !== Boolean(accessSecret)) {
+    throw new Error('Set both JELLYSEERR_CF_ACCESS_CLIENT_ID and JELLYSEERR_CF_ACCESS_CLIENT_SECRET, or neither.');
+  }
+
+  return { url, apiKey, userId: user ? Number(user) : null, accessId, accessSecret };
 }
