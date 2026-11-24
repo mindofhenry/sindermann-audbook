@@ -1,0 +1,19 @@
+{
+  "name": "audiobook-bot",
+  "version": "0.1.0",
+  "description": "Self-hosted Discord audiobook bot: resume position, chapter skip, per-book bookmarks",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/*.test.js\""
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.28.1"
+  }
+}

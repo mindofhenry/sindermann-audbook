@@ -1,0 +1,15 @@
+services:
+  audiobook-bot:
+    build: .
+    image: audiobook-bot:latest
+    container_name: audiobook-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ${BOOKS_PATH:-./books}:/books:ro   # your audiobooks, read-only
+      - ./data:/data                       # SQLite: positions and bookmarks
+    # No ports: the bot only makes outbound connections to Discord.
+    mem_limit: 300m
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
