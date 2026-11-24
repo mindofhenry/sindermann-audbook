@@ -36,8 +36,22 @@
       <ol id="shelf" class="cards"></ol>
     </section>
 
+    <section id="prowlarr" aria-labelledby="prowlarr-heading" hidden>
+      <h2 id="prowlarr-heading">Indexer search</h2>
+      <p class="note">Looks up audiobooks in Prowlarr. Search only: nothing here can be added to the shelf.</p>
+      <form id="prowlarr-search" role="search">
+        <div class="catalog-line">
+          <label for="pq" class="visually-hidden">Title or author</label>
+          <input id="pq" name="q" type="search" placeholder="Title or author" autocomplete="off" enterkeyhint="search" required>
+          <button type="submit">Search</button>
+        </div>
+      </form>
+      <p id="prowlarr-status" class="status" role="status" aria-live="polite"></p>
+      <ol id="prowlarr-results" class="cards"></ol>
+    </section>
+
     <footer>
-      <p>Audiobooks are LibriVox recordings from the Internet Archive. Everything here is in the public domain.</p>
+      <p>Audiobooks on the shelf are LibriVox recordings from the Internet Archive, all in the public domain.</p>
     </footer>
   </main>
   <script src="/app.js" defer></script>
