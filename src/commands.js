@@ -5,6 +5,7 @@
 import { InteractionContextType, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { formatTime, parseTime } from './format.js';
 import { findBook, searchBooks } from './library.js';
+import { chapterIndexAt } from './timeline.js';
 import { bookmarksText, chaptersText, libraryText, statusText } from './views.js';
 
 const NOTHING = 'Nothing is playing. Use /play to start a book.';
@@ -30,8 +31,8 @@ export const definitions = [
   command('next', 'Skip to the next chapter'),
   command('prev', 'Go back to the start of this chapter, or the one before'),
   command('chapters', 'List the chapters of the current book'),
-  command('chapter', 'Jump to a chapter by number').addIntegerOption((o) =>
-    o.setName('number').setDescription('Chapter number').setRequired(true).setMinValue(1)),
+  command('chapter', 'Jump to a chapter: pick from the list or type its number').addIntegerOption((o) =>
+    o.setName('number').setDescription('Chapter number, or start typing a title').setRequired(true).setMinValue(1).setAutocomplete(true)),
   command('back', 'Rewind a few seconds').addIntegerOption(seconds),
   command('forward', 'Skip ahead a few seconds').addIntegerOption(seconds),
   command('seek', 'Jump to a time in the book').addStringOption((o) =>
@@ -68,13 +69,16 @@ export function createCommands({ db, sessions, library }) {
     return { matches };
   };
 
-  const startBook = async (i, book) => {
+  const startBook = async (i, book, from) => {
     const channel = i.member?.voice?.channel;
     if (!channel) return 'Join a voice channel first, then run the command again.';
     const session = await sessions.join(channel);
-    session.start(book);
+    session.start(book, from);
     return statusText(session.status());
   };
+
+  // The book /resume would reopen: the one this server listened to last.
+  const lastBook = (guildId) => findBook(library.books, db.lastBookId(guildId) ?? '');
 
   // Handlers that need a loaded book are wrapped so each one can assume it.
   const withBook = (handler) => (i) => {
@@ -111,7 +115,7 @@ export function createCommands({ db, sessions, library }) {
         session.resume();
         return statusText(session.status());
       }
-      const last = findBook(library.books, db.lastBookId(i.guildId) ?? '');
+      const last = lastBook(i.guildId);
       if (!last) return 'Nothing to resume yet. Use /play to pick a book.';
       return startBook(i, last);
     },
@@ -140,13 +144,18 @@ export function createCommands({ db, sessions, library }) {
 
     chapters: withBook((i, session) => chaptersText(session.status())),
 
-    chapter: withBook((i, session) => {
+    chapter: async (i) => {
       const number = i.options.getInteger('number');
-      if (!session.goToChapter(number - 1)) {
-        return `Pick a chapter from 1 to ${session.book.timeline.chapters.length}.`;
-      }
+      const session = active(i.guildId);
+      // Nothing loaded (for example after a restart): open the last book at that chapter.
+      const book = session?.book ?? lastBook(i.guildId);
+      if (!book) return NOTHING;
+      const chapter = book.timeline.chapters[number - 1];
+      if (!chapter) return `Pick a chapter from 1 to ${book.timeline.chapters.length}.`;
+      if (!session) return startBook(i, book, { position: chapter.start });
+      session.goToChapter(number - 1);
       return statusText(session.status());
-    }),
+    },
 
     back: skipBy(-1),
     forward: skipBy(+1),
@@ -235,10 +244,55 @@ export function createCommands({ db, sessions, library }) {
           .slice(0, 25);
       }
 
+      if (interaction.commandName === 'chapter') {
+        const session = active(interaction.guildId);
+        if (session) {
+          const { book, chapterIndex } = session.status();
+          return chapterChoices(book, chapterIndex, ' (playing now)', typed);
+        }
+        const book = lastBook(interaction.guildId);
+        if (!book) return [];
+        const saved = db.getProgress(interaction.guildId, book.id)?.position ?? 0;
+        return chapterChoices(book, chapterIndexAt(book.timeline, saved), ' (left off here)', typed);
+      }
+
       return [];
     },
   };
 }
 
+// Choices for the /chapter picker. Nothing typed: the chapters around the
+// current one. A number: that chapter, then numbers starting with it. Words:
+// chapters whose title contains them.
+function chapterChoices(book, currentIndex, mark, typed) {
+  const all = book.timeline.chapters.map((chapter, index) => ({
+    number: index + 1,
+    label: `${index + 1}. ${chapter.title}`,
+    current: index === currentIndex,
+  }));
+  const wanted = typed.trim().toLowerCase();
+
+  let shown;
+  if (!wanted) {
+    // Two before the current chapter, so going back a little is one click.
+    const start = Math.max(0, Math.min(currentIndex - 2, all.length - MAX_CHOICES));
+    shown = all.slice(start, start + MAX_CHOICES);
+  } else {
+    const rank = (c) => {
+      if (String(c.number) === wanted) return 0;
+      if (String(c.number).startsWith(wanted)) return 1;
+      return c.label.toLowerCase().includes(wanted) ? 2 : null;
+    };
+    shown = all
+      .map((c) => ({ ...c, rank: rank(c) }))
+      .filter((c) => c.rank !== null)
+      .sort((a, b) => a.rank - b.rank || a.number - b.number)
+      .slice(0, MAX_CHOICES);
+  }
+  return shown.map((c) => ({ name: c.current ? clip(c.label, 100 - mark.length) + mark : clip(c.label), value: c.number }));
+}
+
+const MAX_CHOICES = 25; // Discord's limit for one autocomplete reply
+
 // Discord rejects choice names longer than 100 characters.
-const clip = (text) => (text.length > 100 ? `${text.slice(0, 99)}…` : text);
+const clip = (text, max = 100) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
