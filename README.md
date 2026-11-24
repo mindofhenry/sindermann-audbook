@@ -19,7 +19,7 @@ It also pauses itself when the voice channel empties, and resumes when someone c
 | `/pause` `/resume` `/stop` | Pause, continue, or save and leave. `/resume` with nothing loaded reopens the last book |
 | `/nowplaying` | Book, chapter, position, progress bar |
 | `/next` `/prev` | Next chapter. Start of this chapter, or the previous one if you are within 5 seconds of the start |
-| `/chapters` `/chapter number` | List chapters, jump to one. `/chapter` opens a picker: choose from the list, type a number, or type part of a title |
+| `/chapters` `/chapter number` | List chapters, jump to one. `/chapter` opens a picker: choose from the list, type a number, or type part of a title. With nothing loaded it offers the last book and starts it at the chapter you pick |
 | `/back [seconds]` `/forward [seconds]` | Skip, 30 seconds by default |
 | `/seek time` | Jump to `1:23:45`, `12:30`, `90m` or plain seconds |
 | `/speed rate` | 0.75x to 2x, remembered per server |
@@ -114,7 +114,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-254 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+259 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

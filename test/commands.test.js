@@ -425,3 +425,48 @@ test('the chapter picker is empty when no book is loaded', () => {
   const { commands } = setup();
   assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), []);
 });
+
+// --- chapter picker with nothing loaded (for example after the bot restarts) ---
+
+// Listened to Book A up to 150s (inside chapter Two), then stopped. Nothing is loaded now.
+async function stoppedMidBook() {
+  const ctx = await playing(150);
+  await ctx.run('stop');
+  assert.equal(ctx.sessions.get('g1'), null);
+  return ctx;
+}
+
+test('with nothing loaded the chapter picker offers the last book, marking where you left off', async () => {
+  const { commands } = await stoppedMidBook();
+  assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), [
+    { name: '1. One', value: 1 },
+    { name: '2. Two (left off here)', value: 2 },
+    { name: '3. Three', value: 3 },
+  ]);
+});
+
+test('with nothing loaded /chapter starts the last book at the chosen chapter', async () => {
+  const { run, sessions } = await stoppedMidBook();
+  const reply = await run('chapter', { number: 3 });
+  assert.match(reply, /Book A/);
+  assert.match(reply, /Chapter 3\/3: Three/);
+  assert.equal(sessions.get('g1').position(), 300); // the start of chapter Three, not the saved 150s
+});
+
+test('with nothing loaded /chapter needs you in a voice channel', async () => {
+  const { run, sessions } = await stoppedMidBook();
+  assert.match(await run('chapter', { number: 3 }, { inVoice: false }), /join a voice channel/i);
+  assert.equal(sessions.get('g1'), null);
+});
+
+test('with nothing loaded a chapter number outside the last book is refused without joining', async () => {
+  const { run, sessions } = await stoppedMidBook();
+  assert.match(await run('chapter', { number: 9 }), /1 to 3/);
+  assert.equal(sessions.get('g1'), null);
+});
+
+test('before any book has been played /chapter has nothing to offer', async () => {
+  const { run, commands } = setup();
+  assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), []);
+  assert.match(await run('chapter', { number: 1 }), /nothing is playing/i);
+});

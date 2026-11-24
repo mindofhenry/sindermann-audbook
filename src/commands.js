@@ -5,6 +5,7 @@
 import { InteractionContextType, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { formatTime, parseTime } from './format.js';
 import { findBook, searchBooks } from './library.js';
+import { chapterIndexAt } from './timeline.js';
 import { bookmarksText, chaptersText, libraryText, statusText } from './views.js';
 
 const NOTHING = 'Nothing is playing. Use /play to start a book.';
@@ -68,13 +69,16 @@ export function createCommands({ db, sessions, library }) {
     return { matches };
   };
 
-  const startBook = async (i, book) => {
+  const startBook = async (i, book, from) => {
     const channel = i.member?.voice?.channel;
     if (!channel) return 'Join a voice channel first, then run the command again.';
     const session = await sessions.join(channel);
-    session.start(book);
+    session.start(book, from);
     return statusText(session.status());
   };
+
+  // The book /resume would reopen: the one this server listened to last.
+  const lastBook = (guildId) => findBook(library.books, db.lastBookId(guildId) ?? '');
 
   // Handlers that need a loaded book are wrapped so each one can assume it.
   const withBook = (handler) => (i) => {
@@ -111,7 +115,7 @@ export function createCommands({ db, sessions, library }) {
         session.resume();
         return statusText(session.status());
       }
-      const last = findBook(library.books, db.lastBookId(i.guildId) ?? '');
+      const last = lastBook(i.guildId);
       if (!last) return 'Nothing to resume yet. Use /play to pick a book.';
       return startBook(i, last);
     },
@@ -140,13 +144,18 @@ export function createCommands({ db, sessions, library }) {
 
     chapters: withBook((i, session) => chaptersText(session.status())),
 
-    chapter: withBook((i, session) => {
+    chapter: async (i) => {
       const number = i.options.getInteger('number');
-      if (!session.goToChapter(number - 1)) {
-        return `Pick a chapter from 1 to ${session.book.timeline.chapters.length}.`;
-      }
+      const session = active(i.guildId);
+      // Nothing loaded (for example after a restart): open the last book at that chapter.
+      const book = session?.book ?? lastBook(i.guildId);
+      if (!book) return NOTHING;
+      const chapter = book.timeline.chapters[number - 1];
+      if (!chapter) return `Pick a chapter from 1 to ${book.timeline.chapters.length}.`;
+      if (!session) return startBook(i, book, { position: chapter.start });
+      session.goToChapter(number - 1);
       return statusText(session.status());
-    }),
+    },
 
     back: skipBy(-1),
     forward: skipBy(+1),
@@ -237,7 +246,14 @@ export function createCommands({ db, sessions, library }) {
 
       if (interaction.commandName === 'chapter') {
         const session = active(interaction.guildId);
-        return session ? chapterChoices(session.status(), typed) : [];
+        if (session) {
+          const { book, chapterIndex } = session.status();
+          return chapterChoices(book, chapterIndex, ' (playing now)', typed);
+        }
+        const book = lastBook(interaction.guildId);
+        if (!book) return [];
+        const saved = db.getProgress(interaction.guildId, book.id)?.position ?? 0;
+        return chapterChoices(book, chapterIndexAt(book.timeline, saved), ' (left off here)', typed);
       }
 
       return [];
@@ -248,18 +264,18 @@ export function createCommands({ db, sessions, library }) {
 // Choices for the /chapter picker. Nothing typed: the chapters around the
 // current one. A number: that chapter, then numbers starting with it. Words:
 // chapters whose title contains them.
-function chapterChoices(status, typed) {
-  const all = status.book.timeline.chapters.map((chapter, index) => ({
+function chapterChoices(book, currentIndex, mark, typed) {
+  const all = book.timeline.chapters.map((chapter, index) => ({
     number: index + 1,
     label: `${index + 1}. ${chapter.title}`,
-    current: index === status.chapterIndex,
+    current: index === currentIndex,
   }));
   const wanted = typed.trim().toLowerCase();
 
   let shown;
   if (!wanted) {
     // Two before the current chapter, so going back a little is one click.
-    const start = Math.max(0, Math.min(status.chapterIndex - 2, all.length - MAX_CHOICES));
+    const start = Math.max(0, Math.min(currentIndex - 2, all.length - MAX_CHOICES));
     shown = all.slice(start, start + MAX_CHOICES);
   } else {
     const rank = (c) => {
@@ -273,7 +289,6 @@ function chapterChoices(status, typed) {
       .sort((a, b) => a.rank - b.rank || a.number - b.number)
       .slice(0, MAX_CHOICES);
   }
-  const mark = ' (playing now)';
   return shown.map((c) => ({ name: c.current ? clip(c.label, 100 - mark.length) + mark : clip(c.label), value: c.number }));
 }
 
