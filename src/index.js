@@ -5,6 +5,9 @@ import { createCommands, definitions } from './commands.js';
 import { loadConfig } from './config.js';
 import { openDb } from './db.js';
 import { scanLibrary } from './library.js';
+import { createCatalog } from './portal/catalog.js';
+import { createPortal } from './portal/server.js';
+import { addToShelf } from './portal/shelf.js';
 import { createPresenceWatcher } from './presence.js';
 import { registerCommands } from './register.js';
 import { SessionManager } from './voice.js';
@@ -109,11 +112,29 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
   presence.update(guild.id, listeners);
 });
 
+// Friends homepage: search the public-domain catalogs and add books.
+let portal = null;
+if (config.portalPort) {
+  const shelves = {
+    audiobook: { root: config.booksDir, allowedHosts: ['archive.org'] },
+    ebook: { root: config.ebooksDir, allowedHosts: ['gutenberg.org'] },
+  };
+  portal = createPortal({
+    catalog: createCatalog(),
+    library,
+    listenUrl: config.listenUrl,
+    log: console.log,
+    addBook: (type, plan, onProgress) => addToShelf(plan, shelves[type].root, { allowedHosts: shelves[type].allowedHosts, onProgress }),
+  });
+  portal.server.listen(config.portalPort, () => console.log(`[portal] homepage listening on port ${config.portalPort}`));
+}
+
 const saver = setInterval(() => sessions.saveAll(), SAVE_EVERY_MS);
 
 function shutdown(signal) {
   console.log(`[bot] ${signal} received, saving positions`);
   clearInterval(saver);
+  portal?.server.close();
   sessions.leaveAll(); // each leave saves the current position
   db.close();
   client.destroy().finally(() => process.exit(0));

@@ -33,6 +33,7 @@ if [ ! -f .env ]; then
     echo "GUILD_ID=$guild"
     echo "BOOKS_PATH=${BOOKS_PATH:-./books}"
     echo "EMPTY_LEAVE_MINUTES=5"
+    echo "LISTEN_URL=${LISTEN_URL:-}"
   } > .env
   umask 022
   say "Wrote .env"
@@ -43,16 +44,20 @@ fi
 # --- 3. Folders: books are read-only to the bot, data/ holds the SQLite file ---
 books_path="$(grep -E '^BOOKS_PATH=' .env | tail -1 | cut -d= -f2-)"
 books_path="${books_path:-./books}"
-mkdir -p data "$books_path"
+mkdir -p data ebooks abs/config abs/metadata "$books_path"
 
-# The container runs as the unprivileged "node" user (uid 1000) and must be
-# able to write the database.
-if [ "$(stat -c %u data)" != "1000" ]; then
-  if [ "$(id -u)" = "0" ]; then
-    chown -R 1000:1000 data
-  else
-    sudo chown -R 1000:1000 data || fail "Could not make ./data writable for uid 1000. Run: sudo chown -R 1000:1000 data"
-  fi
+# The bot runs as the unprivileged "node" user (uid 1000). It writes the
+# database, and the homepage adds books, so these folders must be its own.
+own() {
+  [ "$(stat -c %u "$1")" = "1000" ] && return 0
+  if [ "$(id -u)" = "0" ]; then chown -R 1000:1000 "$1"; else sudo chown -R 1000:1000 "$1" || fail "Run: sudo chown -R 1000:1000 $1"; fi
+}
+own data
+own ebooks
+if [ "$books_path" = "./books" ]; then
+  own "$books_path"
+elif [ "$(stat -c %u "$books_path")" != "1000" ]; then
+  echo "Note: $books_path is not owned by uid 1000, so the homepage cannot add audiobooks to it."
 fi
 
 # --- 4. Build and start ---
@@ -64,7 +69,7 @@ say "Waiting for the bot to log in"
 for _ in $(seq 1 30); do
   logs="$(docker compose logs --no-color --tail 200 2>&1 || true)"
   if grep -q "logged in as" <<<"$logs"; then
-    grep -E "logged in as|books in|commands registered|could not register|Invite:" <<<"$logs" | sed 's/^[^|]*| //' || true
+    grep -E "logged in as|books in|commands registered|could not register|homepage listening|Invite:" <<<"$logs" | sed 's/^[^|]*| //' || true
     say "Done. Add books to: $(cd "$books_path" && pwd)   then run /rescan in Discord."
     exit 0
   fi

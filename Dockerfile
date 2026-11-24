@@ -12,6 +12,7 @@ COPY src ./src
 
 ENV NODE_ENV=production \
     BOOKS_DIR=/books \
+    EBOOKS_DIR=/ebooks \
     DATA_DIR=/data
 VOLUME ["/data"]
 

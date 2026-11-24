@@ -5,11 +5,34 @@ services:
     container_name: audiobook-bot
     restart: unless-stopped
     env_file: .env
+    environment:
+      PORTAL_PORT: "8080"                  # friends homepage inside the container
+    ports:
+      # Homepage on localhost only. Put a tunnel with a login in front of it;
+      # never publish this port to the internet directly.
+      - "127.0.0.1:${PORTAL_HOST_PORT:-8090}:8080"
     volumes:
-      - ${BOOKS_PATH:-./books}:/books:ro   # your audiobooks, read-only
+      - ${BOOKS_PATH:-./books}:/books      # audiobooks (the homepage adds to it)
+      - ./ebooks:/ebooks                   # ebooks added from the homepage
       - ./data:/data                       # SQLite: positions and bookmarks
-    # No ports: the bot only makes outbound connections to Discord.
     mem_limit: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+
+  # Web player and reader for the same shelf. Also on localhost only.
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LISTEN_HOST_PORT:-13378}:80"
+    volumes:
+      - ${BOOKS_PATH:-./books}:/audiobooks:ro
+      - ./ebooks:/ebooks:ro
+      - ./abs/config:/config
+      - ./abs/metadata:/metadata
+    mem_limit: 400m
     logging:
       driver: json-file
       options: { max-size: "5m", max-file: "3" }

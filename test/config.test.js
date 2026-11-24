@@ -33,3 +33,26 @@ test('environment values override the defaults', () => {
 test('a nonsense grace period is rejected', () => {
   assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', EMPTY_LEAVE_MINUTES: 'soon' }), /EMPTY_LEAVE_MINUTES/);
 });
+
+test('the homepage is off unless a port is set', () => {
+  const config = loadConfig({ DISCORD_TOKEN: 'abc' });
+  assert.equal(config.portalPort, null);
+  assert.equal(config.ebooksDir, './ebooks');
+  assert.equal(config.listenUrl, null);
+});
+
+test('homepage settings are read from the environment', () => {
+  const config = loadConfig({ DISCORD_TOKEN: 'abc', PORTAL_PORT: '8080', EBOOKS_DIR: '/ebooks', LISTEN_URL: ' https://listen.example ' });
+  assert.equal(config.portalPort, 8080);
+  assert.equal(config.ebooksDir, '/ebooks');
+  assert.equal(config.listenUrl, 'https://listen.example');
+});
+
+test('a homepage port that is not a port is rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PORTAL_PORT: 'eighty' }), /PORTAL_PORT/);
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PORTAL_PORT: '70000' }), /PORTAL_PORT/);
+});
+
+test('a listen link that is not an http(s) address is rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', LISTEN_URL: 'javascript:alert(1)' }), /LISTEN_URL/);
+});

@@ -59,6 +59,12 @@ docker compose down             # stop
 cp data/audiobook.db backup.db  # back up positions and bookmarks
 ```
 
+## Friends homepage
+
+The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks and Project Gutenberg ebooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
+
+Both ports listen on localhost only. Publish them through a tunnel that has a login in front (for example Cloudflare Tunnel with Cloudflare Access). The homepage has no login of its own.
+
 ## How it works
 
 ```
@@ -79,6 +85,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 | `src/commands.js`, `src/views.js` | Slash commands and reply text |
 | `src/presence.js` | Pause on empty channel, leave after a grace period |
 | `src/register.js` | Registers slash commands per server |
+| `src/portal/` | Friends homepage: catalog search, safe downloads, web page |
 | `src/voice.js`, `src/index.js` | Discord wiring |
 
 ### Decisions worth knowing
@@ -88,7 +95,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 - **Built-in SQLite (`node:sqlite`).** No database server and no native module. State is one file you can copy.
 - **Progress is per server, not per user.** A voice channel has one stream, so "our place in this book" is the unit that matches how it is used.
 - **A file that fails to play stops the book instead of skipping ahead.** If the books disk disappears, the bot must not race through every file and mark the book finished.
-- **Docker, no open ports.** The bot only makes outbound connections. Books are mounted read-only.
+- **Docker, nothing exposed.** The bot only makes outbound connections, and the homepage binds to localhost.
 
 ## Tests
 
@@ -96,7 +103,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-146 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+189 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

@@ -1,0 +1,75 @@
+/* A lending-library checkout desk: sage paper, bottle-green ink, and one
+   violet rubber stamp for books that made it onto the shelf. */
+:root {
+  --paper: #e9f0ea;
+  --card: #fbfcfa;
+  --ink: #12332a;
+  --muted: #55695f;
+  --rule: #c3d0c7;
+  --stamp: #4b3bc9;
+  --overdue: #a8261d;
+  --typed: "American Typewriter", Rockwell, "Rockwell Nova", "Courier Prime", "Courier New", serif;
+  --plain: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 1rem/1.5 var(--plain); }
+main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+
+h1 { font: 700 clamp(2.6rem, 11vw, 4.2rem)/0.95 var(--typed); letter-spacing: -0.02em; margin: 0 0 0.75rem; }
+h2 { font: 700 1.5rem/1.2 var(--typed); margin: 3rem 0 0.5rem; padding-top: 1.25rem; border-top: 2px solid var(--ink); }
+.lede { margin: 0 0 2rem; max-width: 30rem; color: var(--muted); }
+
+.kinds { border: 0; padding: 0; margin: 0 0 0.75rem; display: flex; gap: 1.25rem; }
+.kinds label { cursor: pointer; }
+.kinds input { accent-color: var(--ink); margin-right: 0.3rem; }
+.kinds input:checked + span { font-weight: 700; text-decoration: underline; text-underline-offset: 0.3em; text-decoration-thickness: 2px; }
+
+/* The search field is the one loud element: a typed line on a catalog card. */
+.catalog-line { display: flex; gap: 0.5rem; border-bottom: 3px solid var(--ink); padding-bottom: 0.35rem; }
+.catalog-line input {
+  flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink);
+  font: 400 clamp(1.35rem, 6vw, 1.9rem)/1.3 var(--typed); padding: 0.2rem 0;
+}
+.catalog-line input::placeholder { color: var(--muted); opacity: 0.75; }
+button {
+  font: 600 1rem/1 var(--plain); color: var(--card); background: var(--ink);
+  border: 2px solid var(--ink); border-radius: 3px; padding: 0.65rem 1rem; cursor: pointer;
+}
+button.quiet { background: transparent; color: var(--ink); }
+button:disabled { opacity: 0.55; cursor: default; }
+:focus-visible { outline: 3px solid var(--stamp); outline-offset: 2px; }
+
+#status { min-height: 1.5rem; margin: 1rem 0 0; color: var(--muted); }
+#status.problem { color: var(--overdue); font-weight: 600; }
+
+.cards { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.cards li {
+  position: relative; display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; align-items: center;
+  background: var(--card); border: 1px solid var(--rule); border-left: 4px solid var(--ink);
+  padding: 0.85rem 1rem; margin-bottom: 0.6rem;
+}
+.cards .title { font: 700 1.1rem/1.25 var(--typed); margin: 0; overflow-wrap: anywhere; }
+.cards .meta { grid-column: 1; margin: 0; color: var(--muted); font-size: 0.92rem; }
+.cards .act { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-end; }
+.cards code { font: 0.9rem var(--typed); background: var(--paper); padding: 0.1rem 0.35rem; border-radius: 2px; overflow-wrap: anywhere; }
+.cards .problem { color: var(--overdue); font-weight: 600; }
+
+/* The rubber stamp. */
+.stamp {
+  display: inline-block; font: 700 0.95rem/1 var(--typed); color: var(--stamp);
+  border: 3px double var(--stamp); border-radius: 4px; padding: 0.4rem 0.6rem;
+  transform: rotate(-6deg); white-space: nowrap;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stamp.fresh { animation: thump 0.28s cubic-bezier(.2, 1.6, .4, 1) both; }
+  @keyframes thump { from { transform: rotate(-6deg) scale(1.9); opacity: 0; } to { transform: rotate(-6deg) scale(1); opacity: 1; } }
+}
+
+#listen a, footer a { color: var(--ink); font-weight: 600; }
+footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 26rem) {
+  .cards li { grid-template-columns: 1fr; }
+  .cards .act { grid-row: auto; grid-column: 1; align-items: flex-start; margin-top: 0.4rem; }
+}
