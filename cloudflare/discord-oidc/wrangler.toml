@@ -1,0 +1,18 @@
+# Discord login bridge for Cloudflare Access. See README.md in this folder.
+name = "discord-oidc"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+DISCORD_CLIENT_ID = ""   # Discord application ID
+REDIRECT_URL = ""        # https://<team>.cloudflareaccess.com/cdn-cgi/access/callback
+GUILD_IDS = ""           # optional: server IDs to report roles for, comma separated
+
+[[kv_namespaces]]
+binding = "KV"
+id = ""                  # npx wrangler kv namespace create discord-oidc-keys
+
+# Secrets (never in this file):
+#   npx wrangler secret put DISCORD_CLIENT_SECRET   Discord application OAuth2 secret
+#   npx wrangler secret put DISCORD_TOKEN           optional bot token, for role claims
