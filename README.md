@@ -83,7 +83,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 
 ### Decisions worth knowing
 
-- **ffmpeg does the seeking and encoding.** Each seek, chapter jump or speed change starts a new ffmpeg at the right offset and emits Ogg Opus, which Discord accepts as is. Node only forwards bytes, so the bot has no native audio modules to compile and idles at well under 100 MB of memory.
+- **ffmpeg does the seeking and encoding.** Each seek, chapter jump or speed change starts a new ffmpeg at the right offset and emits Ogg Opus, which Discord accepts as is. Node only forwards bytes, so the bot has no native audio modules to compile.
 - **One clock per book.** A 40-file MP3 book and a single m4b become the same thing: a position in seconds plus a chapter list. Every feature is written once against that.
 - **Built-in SQLite (`node:sqlite`).** No database server and no native module. State is one file you can copy.
 - **Progress is per server, not per user.** A voice channel has one stream, so "our place in this book" is the unit that matches how it is used.

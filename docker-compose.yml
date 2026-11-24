@@ -9,7 +9,7 @@ services:
       - ${BOOKS_PATH:-./books}:/books:ro   # your audiobooks, read-only
       - ./data:/data                       # SQLite: positions and bookmarks
     # No ports: the bot only makes outbound connections to Discord.
-    mem_limit: 300m
+    mem_limit: 512m
     logging:
       driver: json-file
       options: { max-size: "5m", max-file: "3" }
