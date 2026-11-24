@@ -30,8 +30,8 @@ export const definitions = [
   command('next', 'Skip to the next chapter'),
   command('prev', 'Go back to the start of this chapter, or the one before'),
   command('chapters', 'List the chapters of the current book'),
-  command('chapter', 'Jump to a chapter by number').addIntegerOption((o) =>
-    o.setName('number').setDescription('Chapter number').setRequired(true).setMinValue(1)),
+  command('chapter', 'Jump to a chapter: pick from the list or type its number').addIntegerOption((o) =>
+    o.setName('number').setDescription('Chapter number, or start typing a title').setRequired(true).setMinValue(1).setAutocomplete(true)),
   command('back', 'Rewind a few seconds').addIntegerOption(seconds),
   command('forward', 'Skip ahead a few seconds').addIntegerOption(seconds),
   command('seek', 'Jump to a time in the book').addStringOption((o) =>
@@ -235,10 +235,49 @@ export function createCommands({ db, sessions, library }) {
           .slice(0, 25);
       }
 
+      if (interaction.commandName === 'chapter') {
+        const session = active(interaction.guildId);
+        return session ? chapterChoices(session.status(), typed) : [];
+      }
+
       return [];
     },
   };
 }
 
+// Choices for the /chapter picker. Nothing typed: the chapters around the
+// current one. A number: that chapter, then numbers starting with it. Words:
+// chapters whose title contains them.
+function chapterChoices(status, typed) {
+  const all = status.book.timeline.chapters.map((chapter, index) => ({
+    number: index + 1,
+    label: `${index + 1}. ${chapter.title}`,
+    current: index === status.chapterIndex,
+  }));
+  const wanted = typed.trim().toLowerCase();
+
+  let shown;
+  if (!wanted) {
+    // Two before the current chapter, so going back a little is one click.
+    const start = Math.max(0, Math.min(status.chapterIndex - 2, all.length - MAX_CHOICES));
+    shown = all.slice(start, start + MAX_CHOICES);
+  } else {
+    const rank = (c) => {
+      if (String(c.number) === wanted) return 0;
+      if (String(c.number).startsWith(wanted)) return 1;
+      return c.label.toLowerCase().includes(wanted) ? 2 : null;
+    };
+    shown = all
+      .map((c) => ({ ...c, rank: rank(c) }))
+      .filter((c) => c.rank !== null)
+      .sort((a, b) => a.rank - b.rank || a.number - b.number)
+      .slice(0, MAX_CHOICES);
+  }
+  const mark = ' (playing now)';
+  return shown.map((c) => ({ name: c.current ? clip(c.label, 100 - mark.length) + mark : clip(c.label), value: c.number }));
+}
+
+const MAX_CHOICES = 25; // Discord's limit for one autocomplete reply
+
 // Discord rejects choice names longer than 100 characters.
-const clip = (text) => (text.length > 100 ? `${text.slice(0, 99)}…` : text);
+const clip = (text, max = 100) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);

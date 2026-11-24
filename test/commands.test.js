@@ -350,3 +350,78 @@ test('bookmark autocomplete offers the bookmarks of the loaded book', async () =
   const choices = commands.autocomplete(interaction('bookmark', {}, { subcommand: 'goto', focused: '' }));
   assert.deepEqual(choices, [{ name: '2:30 the twist', value: id }]);
 });
+
+// --- chapter picker ---------------------------------------------------------
+
+// A 120-chapter book, playing, parked on the given chapter number.
+async function longBook(onChapter = 1) {
+  const timeline = buildTimeline(Array.from({ length: 120 }, (_, i) => ({
+    path: `/long/${i}.mp3`, title: `Part ${i + 1}`, duration: 600, chapters: [],
+  })));
+  const ctx = setup({ books: [{ id: 'long', title: 'Long Book', timeline }] });
+  await ctx.run('play', { book: 'long' });
+  if (onChapter > 1) await ctx.run('chapter', { number: onChapter });
+  const pick = (focused) => ctx.commands.autocomplete(interaction('chapter', {}, { focused }));
+  return { ...ctx, pick };
+}
+
+test('the chapter option offers a picker instead of asking for a bare number', () => {
+  const option = definitions.find((d) => d.name === 'chapter').options[0];
+  assert.equal(option.autocomplete, true);
+  assert.equal(option.type, 4); // still an integer, so typing 12 keeps working
+});
+
+test('the chapter picker lists every chapter by number and title, marking the current one', async () => {
+  const { commands } = await playing(150); // 150s is inside chapter Two
+  assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), [
+    { name: '1. One', value: 1 },
+    { name: '2. Two (playing now)', value: 2 },
+    { name: '3. Three', value: 3 },
+  ]);
+});
+
+test('picking a chapter from the picker jumps to it', async () => {
+  const { run, commands } = await playing(0);
+  const choice = commands.autocomplete(interaction('chapter', {}, { focused: 'thr' }))[0];
+  assert.match(await run('chapter', { number: choice.value }), /Chapter 3\/3: Three/);
+});
+
+test('typing part of a title narrows the chapter picker', async () => {
+  const { commands } = await playing(0);
+  assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: 'TW' })), [{ name: '2. Two', value: 2 }]);
+});
+
+test('typing a number puts that chapter first, then the numbers that start with it', async () => {
+  const { pick } = await longBook();
+  assert.deepEqual(pick('12').map((c) => c.value), [12, 120, 112]);
+});
+
+test('a long book shows 25 chapters around the current one when nothing is typed', async () => {
+  const { pick } = await longBook(50);
+  const values = pick('').map((c) => c.value);
+  assert.equal(values.length, 25);
+  assert.equal(values[0], 48); // two before, so going back a little is one click
+  assert.equal(values.at(-1), 72);
+});
+
+test('near the end of a long book the picker still fills all 25 slots', async () => {
+  const { pick } = await longBook(119);
+  const values = pick('').map((c) => c.value);
+  assert.deepEqual([values[0], values.at(-1), values.length], [96, 120, 25]);
+});
+
+test('the chapter picker never exceeds 25 choices or 100-character names', async () => {
+  const timeline = buildTimeline(Array.from({ length: 40 }, (_, i) => ({
+    path: `/w/${i}.mp3`, title: `${'A very wordy chapter title '.repeat(6)}${i + 1}`, duration: 60, chapters: [],
+  })));
+  const ctx = setup({ books: [{ id: 'wordy', title: 'Wordy', timeline }] });
+  await ctx.run('play', { book: 'wordy' });
+  const choices = ctx.commands.autocomplete(interaction('chapter', {}, { focused: 'wordy' }));
+  assert.equal(choices.length, 25);
+  assert.ok(choices.every((c) => c.name.length <= 100));
+});
+
+test('the chapter picker is empty when no book is loaded', () => {
+  const { commands } = setup();
+  assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), []);
+});
