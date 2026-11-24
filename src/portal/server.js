@@ -18,6 +18,7 @@ const SECURITY = {
 };
 const MAX_WAITING = 5;
 const KEEP_JOBS = 30;
+const MAX_PROWLARR_SEARCHES = 2; // at once, so the page cannot hammer the indexers
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -26,11 +27,13 @@ class HttpError extends Error {
 /**
  * @param {{ catalog: object, library: object, listenUrl?: string|null,
  *           addBook: (type: string, plan: object, onProgress: Function) => Promise<{status: string}>,
+ *           prowlarr?: { search: (query: string) => Promise<object[]> } | null,
  *           log?: Function }} deps
  */
-export function createPortal({ catalog, library, addBook, listenUrl = null, log = () => {} }) {
+export function createPortal({ catalog, library, addBook, listenUrl = null, prowlarr = null, log = () => {} }) {
   const jobs = new Map(); // key -> job, insertion order = age
   let chain = Promise.resolve(); // downloads run one at a time
+  let prowlarrSearches = 0;
 
   function enqueue(type, id, plan, by) {
     const key = `${type}:${id}`;
@@ -88,8 +91,23 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, log 
 
     'GET /api/jobs': async () => ({ jobs: [...jobs.values()].reverse() }),
 
+    // Read-only: lists what Prowlarr's indexers have. Nothing can be added from it.
+    'GET /api/prowlarr': async (req, url) => {
+      if (!prowlarr) throw new HttpError(404, 'Prowlarr search is not set up.');
+      if (prowlarrSearches >= MAX_PROWLARR_SEARCHES) throw new HttpError(429, 'A search is already running. Try again in a moment.');
+      prowlarrSearches += 1;
+      try {
+        return { results: await prowlarr.search(url.searchParams.get('q')) };
+      } catch (err) {
+        throw new HttpError(502, err.message);
+      } finally {
+        prowlarrSearches -= 1;
+      }
+    },
+
     'GET /api/library': async () => ({
       listenUrl,
+      prowlarr: Boolean(prowlarr),
       types: catalog.types,
       books: library.books.map((b) => ({ title: b.title, duration: Math.round(b.timeline.duration), chapters: b.timeline.chapters.length })),
     }),

@@ -62,7 +62,8 @@ function renderResults() {
 
 async function renderShelf() {
   try {
-    const { books, listenUrl, types } = await api('/api/library');
+    const { books, listenUrl, types, prowlarr } = await api('/api/library');
+    $('prowlarr').hidden = !prowlarr;
     // Offer the audiobook/ebook choice only when both are switched on.
     const kinds = document.querySelector('.kinds');
     kinds.hidden = types.length < 2;
@@ -141,6 +142,45 @@ form.addEventListener('submit', async (event) => {
     lastResults = [];
     renderResults();
     say(err.message, true);
+  }
+});
+
+// Prowlarr: a read-only lookup. Results are plain text with no links or buttons.
+function size(bytes) {
+  if (!bytes) return '';
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+}
+
+function age(days) {
+  if (days === null) return '';
+  if (days < 1) return 'today';
+  return days < 365 ? `${days} d old` : `${Math.floor(days / 365)} y old`;
+}
+
+$('prowlarr-search').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const line = $('prowlarr-status');
+  const list = $('prowlarr-results');
+  const tell = (text, problem = false) => {
+    line.textContent = text;
+    line.classList.toggle('problem', problem);
+  };
+  const q = String(new FormData(event.target).get('q')).trim();
+  if (!q) return;
+  tell('Asking the indexers. This can take half a minute.');
+  list.replaceChildren();
+  try {
+    const { results } = await api(`/api/prowlarr?q=${encodeURIComponent(q)}`);
+    tell(results.length ? `${results.length} found` : `No indexer lists anything for "${q}".`);
+    list.replaceChildren(...results.map((r) =>
+      el('li', {},
+        el('p', { className: 'title', textContent: r.title }),
+        el('p', {
+          className: 'meta',
+          textContent: [r.indexer, size(r.size), r.seeders === null ? r.protocol : `${r.seeders} seeding`, age(r.age)].filter(Boolean).join(', '),
+        }))));
+  } catch (err) {
+    tell(err.message, true);
   }
 });
 

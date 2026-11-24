@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createPortal } from '../src/portal/server.js';
 import { bookA } from './helpers/fakes.js';
 
-async function setup({ addBook } = {}) {
+async function setup({ addBook, prowlarr } = {}) {
   const added = [];
   const gates = [];
   const catalog = {
@@ -22,6 +22,7 @@ async function setup({ addBook } = {}) {
     catalog,
     library,
     listenUrl: 'https://listen.example',
+    prowlarr,
     addBook: addBook ?? (async (type, plan) => {
       added.push([type, plan.title]);
       await new Promise((resolve) => gates.push(resolve)); // held until the test releases it
@@ -169,5 +170,84 @@ test('the library endpoint lists what is on the shelf and where to listen', asyn
 test('unknown paths are a 404', async () => {
   const { base, close } = await setup();
   assert.equal((await fetch(`${base}/nope`)).status, 404);
+  close();
+});
+
+// --- Prowlarr search (read-only) ---
+
+const fakeProwlarr = (search) => ({ search });
+// Wait for a condition, but fail instead of hanging when it never comes true.
+async function until(check, what) {
+  for (let i = 0; i < 200; i++) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+const RELEASE = { title: 'Dracula', indexer: 'Internet Archive', size: 5, seeders: 2, age: 1, protocol: 'torrent' };
+
+test('Prowlarr search returns what the Prowlarr client found', async () => {
+  const asked = [];
+  const { base, close } = await setup({ prowlarr: fakeProwlarr(async (q) => { asked.push(q); return [RELEASE]; }) });
+  const res = await fetch(`${base}/api/prowlarr?q=dracula`);
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).results, [RELEASE]);
+  assert.deepEqual(asked, ['dracula']);
+  close();
+});
+
+test('Prowlarr search is a 404 when Prowlarr is not set up', async () => {
+  const { base, close } = await setup();
+  const res = await fetch(`${base}/api/prowlarr?q=dracula`);
+  assert.equal(res.status, 404);
+  assert.match((await res.json()).error, /not set up/i);
+  close();
+});
+
+test('a Prowlarr failure is a 502 with its message', async () => {
+  const { base, close } = await setup({ prowlarr: fakeProwlarr(async () => { throw new Error('Prowlarr is not responding. Try again in a minute.'); }) });
+  const res = await fetch(`${base}/api/prowlarr?q=dracula`);
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /not responding/);
+  close();
+});
+
+test('only two Prowlarr searches run at once, so friends cannot hammer the indexers', async () => {
+  const gates = [];
+  const { base, close } = await setup({ prowlarr: fakeProwlarr(() => new Promise((resolve) => gates.push(() => resolve([RELEASE])))) });
+  const first = fetch(`${base}/api/prowlarr?q=one`);
+  const second = fetch(`${base}/api/prowlarr?q=two`);
+  await until(() => gates.length === 2, 'two searches to reach Prowlarr');
+  const third = await fetch(`${base}/api/prowlarr?q=three`);
+  assert.equal(third.status, 429);
+  gates.forEach((open) => open());
+  assert.equal((await first).status, 200);
+  assert.equal((await second).status, 200);
+  // The slots are free again once those finish.
+  const fourth = fetch(`${base}/api/prowlarr?q=four`);
+  await until(() => gates.length === 3, 'the next search to reach Prowlarr');
+  gates[2]();
+  assert.equal((await fourth).status, 200);
+  close();
+});
+
+test('a failed Prowlarr search frees its slot', async () => {
+  const { base, close } = await setup({ prowlarr: fakeProwlarr(async () => { throw new Error('down'); }) });
+  for (let i = 0; i < 4; i++) assert.equal((await fetch(`${base}/api/prowlarr?q=x`)).status, 502);
+  close();
+});
+
+test('the page is told whether Prowlarr search is available', async () => {
+  const off = await setup();
+  assert.equal((await (await fetch(`${off.base}/api/library`)).json()).prowlarr, false);
+  off.close();
+  const on = await setup({ prowlarr: fakeProwlarr(async () => []) });
+  assert.equal((await (await fetch(`${on.base}/api/library`)).json()).prowlarr, true);
+  on.close();
+});
+
+test('the page has a Prowlarr search form that starts hidden', async () => {
+  const { base, close } = await setup();
+  assert.match(await (await fetch(`${base}/`)).text(), /<section[^>]+id="prowlarr"[^>]+hidden/);
   close();
 });

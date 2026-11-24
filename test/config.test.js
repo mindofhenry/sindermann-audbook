@@ -61,3 +61,42 @@ test('ebooks on the homepage are off unless switched on', () => {
   assert.deepEqual(loadConfig({ DISCORD_TOKEN: 'abc' }).portalTypes, ['audiobook']);
   assert.deepEqual(loadConfig({ DISCORD_TOKEN: 'abc', PORTAL_EBOOKS: 'on' }).portalTypes, ['audiobook', 'ebook']);
 });
+
+test('Prowlarr search is off unless an address is set', () => {
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc' }).prowlarr, null);
+});
+
+test('Prowlarr settings are read from the environment', () => {
+  const config = loadConfig({
+    DISCORD_TOKEN: 'abc',
+    PROWLARR_URL: ' https://prowlarr.example/ ',
+    PROWLARR_API_KEY: ' key123 ',
+    PROWLARR_INDEXER_IDS: '3, 12',
+    PROWLARR_CF_ACCESS_CLIENT_ID: 'id.access',
+    PROWLARR_CF_ACCESS_CLIENT_SECRET: 'shh',
+  });
+  assert.deepEqual(config.prowlarr, {
+    url: 'https://prowlarr.example/', apiKey: 'key123', indexerIds: [3, 12], accessId: 'id.access', accessSecret: 'shh',
+  });
+});
+
+test('Prowlarr defaults to every indexer and no Cloudflare Access token', () => {
+  const config = loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'http://localhost:9696', PROWLARR_API_KEY: 'k' });
+  assert.deepEqual(config.prowlarr, { url: 'http://localhost:9696', apiKey: 'k', indexerIds: [], accessId: null, accessSecret: null });
+});
+
+test('a Prowlarr address without an API key is rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'http://localhost:9696' }), /PROWLARR_API_KEY/);
+});
+
+test('a Prowlarr address that is not an http(s) address is rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'localhost:9696', PROWLARR_API_KEY: 'k' }), /PROWLARR_URL/);
+});
+
+test('Prowlarr indexer IDs that are not whole numbers are rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'http://x', PROWLARR_API_KEY: 'k', PROWLARR_INDEXER_IDS: '3, archive' }), /PROWLARR_INDEXER_IDS/);
+});
+
+test('half a Cloudflare Access token is rejected', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'http://x', PROWLARR_API_KEY: 'k', PROWLARR_CF_ACCESS_CLIENT_ID: 'id' }), /PROWLARR_CF_ACCESS/);
+});

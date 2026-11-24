@@ -63,6 +63,17 @@ cp data/audiobook.db backup.db  # back up positions and bookmarks
 
 The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added. Project Gutenberg ebook search exists behind `PORTAL_EBOOKS=on`, but Gutenberg refused requests from the test server, so it is off by default. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
 
+### Prowlarr search (optional)
+
+Set `PROWLARR_URL` and `PROWLARR_API_KEY` in `.env` and the homepage gains an "Indexer search" box that asks your [Prowlarr](https://prowlarr.com) for audiobook releases (category 3030) and lists title, indexer, size, seeders and age.
+
+- **Search only.** Results are plain text. Download links, magnets, tracker pages and the API key are dropped on the server and never reach the browser, and nothing from this box can be added to the shelf.
+- **You choose what it searches.** It shows whatever your Prowlarr indexers list. `PROWLARR_INDEXER_IDS=3,12` limits it to the indexers you name.
+- **Behind Cloudflare Access?** Create a service token, add a Service Auth policy for it on the Prowlarr application, and set `PROWLARR_CF_ACCESS_CLIENT_ID` and `PROWLARR_CF_ACCESS_CLIENT_SECRET`.
+- At most two searches run at once, so the page cannot hammer your indexers.
+
+Apply a change to `.env` with `docker compose up -d`. The log prints `Prowlarr search on (host)` when it is active.
+
 Both ports listen on localhost only. Publish them through a tunnel that has a login in front (for example Cloudflare Tunnel with Cloudflare Access). The homepage has no login of its own.
 
 ## How it works
@@ -85,7 +96,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 | `src/commands.js`, `src/views.js` | Slash commands and reply text |
 | `src/presence.js` | Pause on empty channel, leave after a grace period |
 | `src/register.js` | Registers slash commands per server |
-| `src/portal/` | Friends homepage: catalog search, safe downloads, web page |
+| `src/portal/` | Friends homepage: catalog search, safe downloads, web page, read-only Prowlarr search (`prowlarr.js`) |
 | `src/voice.js`, `src/index.js` | Discord wiring |
 
 ### Decisions worth knowing
@@ -103,7 +114,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-191 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+222 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 
