@@ -48,7 +48,7 @@ Needs a Linux host with Docker. About 10 minutes, most of it the image build.
    ```
    [LibriVox](https://librivox.org) has free public-domain books: download the "Whole book" zip and unzip it into `books/`. Supported: mp3, m4b, m4a, aac, ogg, opus, flac, wav. DRM-locked files (Audible `.aax`) will not play.
 
-Optional settings live in `.env` (see `.env.example`). Setting `GUILD_ID` makes slash commands appear instantly instead of after up to an hour.
+Optional settings live in `.env` (see `.env.example`). Slash commands register in every server the bot is in and appear straight away.
 
 ### Day to day
 
@@ -78,6 +78,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 | `src/db.js` | Progress, bookmarks and speed in SQLite |
 | `src/commands.js`, `src/views.js` | Slash commands and reply text |
 | `src/presence.js` | Pause on empty channel, leave after a grace period |
+| `src/register.js` | Registers slash commands per server |
 | `src/voice.js`, `src/index.js` | Discord wiring |
 
 ### Decisions worth knowing
@@ -95,7 +96,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-142 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+146 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

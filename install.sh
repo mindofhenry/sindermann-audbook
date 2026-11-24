@@ -24,7 +24,7 @@ if [ ! -f .env ]; then
     [ -t 0 ] || fail "No .env yet and no terminal to ask for the token. Run: DISCORD_TOKEN=... ./install.sh"
     say "Paste the bot token (Developer Portal > your app > Bot > Reset Token). Input is hidden."
     read -r -s -p "DISCORD_TOKEN: " token; echo
-    read -r -p "Server ID for instant slash commands (optional, Enter to skip): " guild
+    read -r -p "Limit commands to one server ID (optional, Enter for all servers): " guild
   fi
   [ -n "$token" ] || fail "The token was empty."
   umask 077   # .env holds a secret: readable by the owner only
@@ -64,7 +64,7 @@ say "Waiting for the bot to log in"
 for _ in $(seq 1 30); do
   logs="$(docker compose logs --no-color --tail 200 2>&1 || true)"
   if grep -q "logged in as" <<<"$logs"; then
-    grep -E "logged in as|books in|commands registered|Invite:" <<<"$logs" | sed 's/^[^|]*| //' || true
+    grep -E "logged in as|books in|commands registered|could not register|Invite:" <<<"$logs" | sed 's/^[^|]*| //' || true
     say "Done. Add books to: $(cd "$books_path" && pwd)   then run /rescan in Discord."
     exit 0
   fi

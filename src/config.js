@@ -14,8 +14,8 @@ export function loadConfig(env = process.env) {
 
   return {
     token,
-    // With a guild id, commands register to that server instantly.
-    // Without one they register globally, which can take up to an hour.
+    // Optional: limit slash commands to one server. By default they are
+    // registered in every server the bot is in.
     guildId: env.GUILD_ID?.trim() || null,
     booksDir: env.BOOKS_DIR?.trim() || './books',
     dbFile: join(env.DATA_DIR?.trim() || './data', 'audiobook.db'),

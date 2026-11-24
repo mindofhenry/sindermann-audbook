@@ -6,6 +6,7 @@ import { loadConfig } from './config.js';
 import { openDb } from './db.js';
 import { scanLibrary } from './library.js';
 import { createPresenceWatcher } from './presence.js';
+import { registerCommands } from './register.js';
 import { SessionManager } from './voice.js';
 
 const SAVE_EVERY_MS = 10_000;
@@ -56,9 +57,22 @@ client.once(Events.ClientReady, async (ready) => {
   console.log(`[bot] logged in as ${ready.user.tag}`);
   // Permissions: View Channel, Send Messages, Connect, Speak.
   console.log(`[bot] Invite: https://discord.com/oauth2/authorize?client_id=${ready.application.id}&scope=bot+applications.commands&permissions=3148800`);
+  console.log(`[bot] in ${ready.guilds.cache.size} server(s): ${ready.guilds.cache.map((g) => g.name).join(', ') || 'none yet, use the invite link'}`);
   await library.rescan();
-  await ready.application.commands.set(definitions, ...(config.guildId ? [config.guildId] : []));
-  console.log(`[bot] ${definitions.length} commands registered ${config.guildId ? `to guild ${config.guildId}` : 'globally (can take up to an hour to appear)'}`);
+  const result = await registerCommands({
+    application: ready.application,
+    guilds: [...ready.guilds.cache.values()],
+    definitions,
+    guildId: config.guildId,
+    onError: (guildId, err) => console.error(`[bot] could not register commands in server ${guildId}: ${err.message}`),
+  });
+  console.log(`[bot] ${definitions.length} commands registered in ${result.registered} server(s)${result.failed ? `, ${result.failed} failed` : ''}`);
+});
+
+// Invited to a new server while running: give it the commands right away.
+client.on(Events.GuildCreate, (guild) => {
+  if (config.guildId) return;
+  guild.commands.set(definitions).catch((err) => console.error(`[bot] could not register commands in server ${guild.id}: ${err.message}`));
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
