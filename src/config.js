@@ -35,6 +35,8 @@ export function loadConfig(env = process.env) {
     emptyLeaveMs: minutes * 60_000,
     // Friends homepage (search and add public-domain books). Off without a port.
     portalPort,
+    // Ebooks need a catalog the server can reach reliably; off by default.
+    portalTypes: /^(1|on|true|yes)$/i.test(env.PORTAL_EBOOKS?.trim() ?? '') ? ['audiobook', 'ebook'] : ['audiobook'],
     ebooksDir: env.EBOOKS_DIR?.trim() || './ebooks',
     // Optional link to a web player such as Audiobookshelf.
     listenUrl,

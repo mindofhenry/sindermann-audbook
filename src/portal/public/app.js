@@ -62,7 +62,11 @@ function renderResults() {
 
 async function renderShelf() {
   try {
-    const { books, listenUrl } = await api('/api/library');
+    const { books, listenUrl, types } = await api('/api/library');
+    // Offer the audiobook/ebook choice only when both are switched on.
+    const kinds = document.querySelector('.kinds');
+    kinds.hidden = types.length < 2;
+    for (const radio of kinds.querySelectorAll('input')) radio.closest('label').hidden = !types.includes(radio.value);
     $('listen').replaceChildren(...(listenUrl
       ? [el('a', { href: listenUrl, textContent: 'Listen or read in the browser' })]
       : []));

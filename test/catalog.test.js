@@ -30,7 +30,7 @@ function setup(routes) {
     if (!hit) return { ok: false, status: 404, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => hit[1] };
   };
-  return { calls, catalog: createCatalog({ fetch }) };
+  return { calls, catalog: createCatalog({ fetch, types: ['audiobook', 'ebook'] }) };
 }
 
 test('audiobook search returns title, author and running time', async () => {
@@ -119,4 +119,11 @@ test('an ebook still in copyright is refused', async () => {
 test('a catalog outage surfaces as a readable error', async () => {
   const { catalog } = setup({});
   await assert.rejects(catalog.search('audiobook', 'x'), /catalog/i);
+});
+
+test('by default only audiobooks are offered', async () => {
+  const catalog = createCatalog({ fetch: async () => ({ ok: true, json: async () => GUTENDEX_SEARCH }) });
+  assert.deepEqual(catalog.types, ['audiobook']);
+  await assert.rejects(catalog.search('ebook', 'pride'), /type/i);
+  await assert.rejects(catalog.plan('ebook', '1342'), /type/i);
 });

@@ -73,3 +73,4 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.9rem; }
   .cards li { grid-template-columns: 1fr; }
   .cards .act { grid-row: auto; grid-column: 1; align-items: flex-start; margin-top: 0.4rem; }
 }
+[hidden] { display: none !important; }

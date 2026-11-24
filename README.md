@@ -61,7 +61,7 @@ cp data/audiobook.db backup.db  # back up positions and bookmarks
 
 ## Friends homepage
 
-The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks and Project Gutenberg ebooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
+The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added. Project Gutenberg ebook search exists behind `PORTAL_EBOOKS=on`, but Gutenberg refused requests from the test server, so it is off by default. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
 
 Both ports listen on localhost only. Publish them through a tunnel that has a login in front (for example Cloudflare Tunnel with Cloudflare Access). The homepage has no login of its own.
 
@@ -103,7 +103,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-189 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+191 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

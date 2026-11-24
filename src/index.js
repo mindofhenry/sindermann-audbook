@@ -120,7 +120,7 @@ if (config.portalPort) {
     ebook: { root: config.ebooksDir, allowedHosts: ['gutenberg.org'] },
   };
   portal = createPortal({
-    catalog: createCatalog(),
+    catalog: createCatalog({ types: config.portalTypes }),
     library,
     listenUrl: config.listenUrl,
     log: console.log,

@@ -7,6 +7,7 @@ async function setup({ addBook } = {}) {
   const added = [];
   const gates = [];
   const catalog = {
+    types: ['audiobook'],
     search: async (type, q) => {
       if (type !== 'audiobook' && type !== 'ebook') throw new Error('Unknown catalog type.');
       return q ? [{ id: 'alice', title: 'Alice', author: 'Carroll', detail: '2:58:51' }] : [];
@@ -161,6 +162,7 @@ test('the library endpoint lists what is on the shelf and where to listen', asyn
   const body = await (await fetch(`${base}/api/library`)).json();
   assert.deepEqual(body.books, [{ title: 'Book A', duration: 350, chapters: 3 }]);
   assert.equal(body.listenUrl, 'https://listen.example');
+  assert.deepEqual(body.types, ['audiobook']);
   close();
 });
 

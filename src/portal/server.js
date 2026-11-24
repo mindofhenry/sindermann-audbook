@@ -90,6 +90,7 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, log 
 
     'GET /api/library': async () => ({
       listenUrl,
+      types: catalog.types,
       books: library.books.map((b) => ({ title: b.title, duration: Math.round(b.timeline.duration), chapters: b.timeline.chapters.length })),
     }),
 

@@ -7,7 +7,7 @@ const natural = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base
 const ID_RULES = { audiobook: /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/, ebook: /^\d{1,7}$/ };
 const EPUB = 'application/epub+zip';
 
-export function createCatalog({ fetch = globalThis.fetch } = {}) {
+export function createCatalog({ fetch = globalThis.fetch, types = ['audiobook'] } = {}) {
   const getJson = async (url) => {
     let res;
     try {
@@ -78,17 +78,22 @@ export function createCatalog({ fetch = globalThis.fetch } = {}) {
     },
   };
 
+  const enabled = (type) => types.includes(type) && searchers[type];
+
   return {
+    /** Which kinds of book this catalog offers, e.g. ['audiobook']. */
+    types,
+
     /** @returns {Promise<{id:string,title:string,author:string,detail:string}[]>} */
     async search(type, query) {
-      if (!searchers[type]) throw new Error('Unknown catalog type.');
+      if (!enabled(type)) throw new Error('Unknown catalog type.');
       const terms = cleanTerms(query);
       return terms ? searchers[type](terms) : [];
     },
 
     /** @returns {Promise<{title:string,author:string,files:{name:string,url:string,size:number|null}[]}>} */
     async plan(type, id) {
-      if (!planners[type]) throw new Error('Unknown catalog type.');
+      if (!enabled(type)) throw new Error('Unknown catalog type.');
       if (!ID_RULES[type].test(String(id))) throw new Error('That book id is not valid.');
       return planners[type](String(id));
     },

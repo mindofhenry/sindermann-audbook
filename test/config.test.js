@@ -56,3 +56,8 @@ test('a homepage port that is not a port is rejected', () => {
 test('a listen link that is not an http(s) address is rejected', () => {
   assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', LISTEN_URL: 'javascript:alert(1)' }), /LISTEN_URL/);
 });
+
+test('ebooks on the homepage are off unless switched on', () => {
+  assert.deepEqual(loadConfig({ DISCORD_TOKEN: 'abc' }).portalTypes, ['audiobook']);
+  assert.deepEqual(loadConfig({ DISCORD_TOKEN: 'abc', PORTAL_EBOOKS: 'on' }).portalTypes, ['audiobook', 'ebook']);
+});
