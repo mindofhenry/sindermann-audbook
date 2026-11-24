@@ -33,7 +33,7 @@ Needs a Linux host with Docker. About 10 minutes, most of it the image build.
 1. **Create the bot.** [Discord Developer Portal](https://discord.com/developers/applications) > New Application > Bot > Reset Token. Copy the token. No privileged intents are needed.
 2. **Get the code and run the installer.** It asks for the token once and stores it in `.env` (owner-readable only).
    ```bash
-   git clone https://github.com/mindofhenry/audiobook-bot.git /opt/audiobook-bot
+   git clone https://github.com/mindofhenry/sindermann-audbook.git /opt/audiobook-bot
    cd /opt/audiobook-bot && ./install.sh
    ```
 3. **Invite it.** The installer prints an invite link. Open it and pick your server.
