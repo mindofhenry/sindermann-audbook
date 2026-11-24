@@ -11,7 +11,7 @@
   <main>
     <header>
       <h1>The shelf</h1>
-      <p class="lede">Free public-domain audiobooks. Add one and it is there for everybody.</p>
+      <p class="lede" id="lede">Free public-domain audiobooks. Add one and it is there for everybody.</p>
     </header>
 
     <form id="search" role="search">
@@ -19,6 +19,8 @@
         <legend class="visually-hidden">What to look for</legend>
         <label><input type="radio" name="type" value="audiobook" checked> <span>Audiobooks</span></label>
         <label><input type="radio" name="type" value="ebook"> <span>Ebooks</span></label>
+        <label><input type="radio" name="type" value="movie"> <span>Movies</span></label>
+        <label><input type="radio" name="type" value="tv"> <span>TV</span></label>
       </fieldset>
       <div class="catalog-line">
         <label for="q" class="visually-hidden">Title or author</label>

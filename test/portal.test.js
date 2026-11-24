@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createPortal } from '../src/portal/server.js';
 import { bookA } from './helpers/fakes.js';
 
-async function setup({ addBook, prowlarr } = {}) {
+async function setup({ addBook, prowlarr, seerr, now } = {}) {
   const added = [];
   const gates = [];
   const catalog = {
@@ -23,6 +23,8 @@ async function setup({ addBook, prowlarr } = {}) {
     library,
     listenUrl: 'https://listen.example',
     prowlarr,
+    seerr,
+    now,
     addBook: addBook ?? (async (type, plan) => {
       added.push([type, plan.title]);
       await new Promise((resolve) => gates.push(resolve)); // held until the test releases it
@@ -249,5 +251,125 @@ test('the page is told whether Prowlarr search is available', async () => {
 test('the page has a Prowlarr search form that starts hidden', async () => {
   const { base, close } = await setup();
   assert.match(await (await fetch(`${base}/`)).text(), /<section[^>]+id="prowlarr"[^>]+hidden/);
+  close();
+});
+
+// --- movies and TV (through Seerr) ---
+
+const MOVIE = { id: '841', title: 'Dune', author: '', detail: '1984', state: null };
+function fakeSeerr({ search, request } = {}) {
+  const asked = [];
+  return {
+    asked,
+    search: search ?? (async (type, q) => { asked.push(['search', type, q]); return [MOVIE]; }),
+    request: request ?? (async (type, id) => { asked.push(['request', type, id]); return { status: 'requested' }; }),
+  };
+}
+const ask = (base, body, headers = {}) =>
+  fetch(`${base}/api/request`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+
+test('the page is offered movies and TV only when Seerr is set up', async () => {
+  const off = await setup();
+  assert.deepEqual((await (await fetch(`${off.base}/api/library`)).json()).types, ['audiobook']);
+  off.close();
+  const on = await setup({ seerr: fakeSeerr() });
+  assert.deepEqual((await (await fetch(`${on.base}/api/library`)).json()).types, ['audiobook', 'movie', 'tv']);
+  on.close();
+});
+
+test('a movie search goes to Seerr and a book search still goes to the catalog', async () => {
+  const seerr = fakeSeerr();
+  const { base, close } = await setup({ seerr });
+  assert.deepEqual((await (await fetch(`${base}/api/search?type=movie&q=dune`)).json()).results, [MOVIE]);
+  assert.deepEqual(seerr.asked, [['search', 'movie', 'dune']]);
+  assert.equal((await (await fetch(`${base}/api/search?type=audiobook&q=alice`)).json()).results[0].id, 'alice');
+  assert.equal(seerr.asked.length, 1);
+  close();
+});
+
+test('a movie search without Seerr is a 400', async () => {
+  const { base, close } = await setup();
+  assert.equal((await fetch(`${base}/api/search?type=movie&q=dune`)).status, 400);
+  close();
+});
+
+test('a Seerr failure during search is a 502 with its message', async () => {
+  const { base, close } = await setup({ seerr: fakeSeerr({ search: async () => { throw new Error('The request service is not responding.'); } }) });
+  const res = await fetch(`${base}/api/search?type=tv&q=dune`);
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /not responding/);
+  close();
+});
+
+test('requesting a movie files it with Seerr and says so', async () => {
+  const seerr = fakeSeerr();
+  const { base, close } = await setup({ seerr });
+  const res = await ask(base, { type: 'movie', id: '841' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { state: 'requested' });
+  assert.deepEqual(seerr.asked, [['request', 'movie', '841']]);
+  close();
+});
+
+test('something already requested comes back as "exists"', async () => {
+  const { base, close } = await setup({ seerr: fakeSeerr({ request: async () => ({ status: 'exists' }) }) });
+  assert.deepEqual(await (await ask(base, { type: 'tv', id: '5' })).json(), { state: 'exists' });
+  close();
+});
+
+test('a request Seerr refuses is a 502 with the reason', async () => {
+  const { base, close } = await setup({ seerr: fakeSeerr({ request: async () => { throw new Error('The request was refused: Movie Quota exceeded.'); } }) });
+  const res = await ask(base, { type: 'movie', id: '841' });
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /Quota exceeded/);
+  close();
+});
+
+test('requests are a 404 when Seerr is not set up', async () => {
+  const { base, close } = await setup();
+  assert.equal((await ask(base, { type: 'movie', id: '841' })).status, 404);
+  close();
+});
+
+test('another site cannot file a request, and the body must be JSON', async () => {
+  const seerr = fakeSeerr();
+  const { base, close } = await setup({ seerr });
+  assert.equal((await ask(base, { type: 'movie', id: '841' }, { origin: 'https://evil.example' })).status, 403);
+  assert.equal((await fetch(`${base}/api/request`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' })).status, 415);
+  assert.equal(seerr.asked.length, 0);
+  close();
+});
+
+test('one person can file 10 requests a day; the 11th waits, and other people are unaffected', async () => {
+  let clock = 1_000_000;
+  const seerr = fakeSeerr();
+  const { base, close } = await setup({ seerr, now: () => clock });
+  const as = (email) => ({ 'cf-access-authenticated-user-email': email });
+  for (let i = 1; i <= 10; i++) assert.equal((await ask(base, { type: 'movie', id: String(i) }, as('a@example.com'))).status, 200);
+  const eleventh = await ask(base, { type: 'movie', id: '11' }, as('a@example.com'));
+  assert.equal(eleventh.status, 429);
+  assert.match((await eleventh.json()).error, /10/);
+  assert.equal(seerr.asked.length, 10); // the 11th never reached Seerr
+  assert.equal((await ask(base, { type: 'movie', id: '11' }, as('b@example.com'))).status, 200);
+  clock += 24 * 60 * 60 * 1000 + 1; // a day later the first person can ask again
+  assert.equal((await ask(base, { type: 'movie', id: '11' }, as('a@example.com'))).status, 200);
+  close();
+});
+
+test('requests that were refused or already existed do not use up the daily allowance', async () => {
+  let fail = true;
+  const seerr = fakeSeerr({ request: async () => { if (fail) throw new Error('refused'); return { status: 'exists' }; } });
+  const { base, close } = await setup({ seerr });
+  for (let i = 0; i < 12; i++) assert.equal((await ask(base, { type: 'movie', id: '1' })).status, 502);
+  fail = false;
+  for (let i = 0; i < 12; i++) assert.equal((await ask(base, { type: 'movie', id: '1' })).status, 200);
+  close();
+});
+
+test('the page offers Movies and TV as kinds to search', async () => {
+  const { base, close } = await setup();
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /name="type" value="movie"/);
+  assert.match(html, /name="type" value="tv"/);
   close();
 });

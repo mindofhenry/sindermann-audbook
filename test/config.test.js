@@ -100,3 +100,28 @@ test('Prowlarr indexer IDs that are not whole numbers are rejected', () => {
 test('half a Cloudflare Access token is rejected', () => {
   assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', PROWLARR_URL: 'http://x', PROWLARR_API_KEY: 'k', PROWLARR_CF_ACCESS_CLIENT_ID: 'id' }), /PROWLARR_CF_ACCESS/);
 });
+
+test('movies and TV are off unless a Jellyseerr address is set', () => {
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc' }).jellyseerr, null);
+});
+
+test('Jellyseerr settings are read from the environment', () => {
+  const config = loadConfig({
+    DISCORD_TOKEN: 'abc', JELLYSEERR_URL: ' https://tv.example/ ', JELLYSEERR_API_KEY: ' key ', JELLYSEERR_USER_ID: ' 7 ',
+    JELLYSEERR_CF_ACCESS_CLIENT_ID: 'id.access', JELLYSEERR_CF_ACCESS_CLIENT_SECRET: 'shh',
+  });
+  assert.deepEqual(config.jellyseerr, { url: 'https://tv.example/', apiKey: 'key', userId: 7, accessId: 'id.access', accessSecret: 'shh' });
+});
+
+test('Jellyseerr defaults to no chosen user and no Cloudflare Access token', () => {
+  const config = loadConfig({ DISCORD_TOKEN: 'abc', JELLYSEERR_URL: 'http://localhost:5055', JELLYSEERR_API_KEY: 'k' });
+  assert.deepEqual(config.jellyseerr, { url: 'http://localhost:5055', apiKey: 'k', userId: null, accessId: null, accessSecret: null });
+});
+
+test('incomplete or malformed Jellyseerr settings are rejected with the name of the setting', () => {
+  const base = { DISCORD_TOKEN: 'abc', JELLYSEERR_URL: 'http://x', JELLYSEERR_API_KEY: 'k' };
+  assert.throws(() => loadConfig({ ...base, JELLYSEERR_API_KEY: '' }), /JELLYSEERR_API_KEY/);
+  assert.throws(() => loadConfig({ ...base, JELLYSEERR_URL: 'tv.example' }), /JELLYSEERR_URL/);
+  assert.throws(() => loadConfig({ ...base, JELLYSEERR_USER_ID: 'henry' }), /JELLYSEERR_USER_ID/);
+  assert.throws(() => loadConfig({ ...base, JELLYSEERR_CF_ACCESS_CLIENT_ID: 'id' }), /JELLYSEERR_CF_ACCESS/);
+});
