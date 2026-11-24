@@ -21,9 +21,14 @@ function setup({ env = {}, user = USER, guilds = [GUILD, '7777'], roles = ['r-sh
     calls.push({ url: u, init });
     if (u.hostname !== 'discord.com') throw new Error(`unexpected host ${u.hostname}`);
     if (u.pathname === '/api/v10/oauth2/token') return tokenStatus === 200 ? json({ access_token: 'user-access', token_type: 'Bearer', expires_in: 604800, refresh_token: 'user-refresh' }) : json({ error: 'invalid_grant' }, tokenStatus);
+    const asBot = init.headers?.authorization?.startsWith('Bot ');
+    if (asBot && init.headers.authorization !== 'Bot bot-token') return json({ message: '401: Unauthorized' }, 401);
+    if (asBot && u.pathname === '/api/v10/users/@me') return json({ id: 'bot', bot: true });
     if (u.pathname === '/api/v10/users/@me') return json(user);
     if (u.pathname === '/api/v10/users/@me/guilds') return json(guilds.map((id) => ({ id, name: `g${id}` })));
     if (u.pathname === `/api/v10/guilds/${GUILD}/members/${user.id}`) return json({ roles });
+    if (asBot && u.pathname === `/api/v10/guilds/${GUILD}`) return json({ id: GUILD });
+    if (asBot && u.pathname.startsWith('/api/v10/guilds/')) return json({ message: 'Unknown Guild', code: 10004 }, 404);
     return json({ message: 'not found' }, 404);
   };
   const worker = createWorker({ fetch });
@@ -180,4 +185,43 @@ test('anything else is a 404', async () => {
   const { get } = setup();
   assert.equal((await get('/')).status, 404);
   assert.equal((await get('/token')).status, 404); // GET, not POST
+});
+
+// --- /health: says what is wrong without revealing any secret ---
+
+test('health reports a working setup', async () => {
+  const { get } = setup();
+  const res = await get('/health');
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { client_secret: 'set', bot_token: 'ok', servers: { [GUILD]: 'ok' } });
+});
+
+test('health says when the bot token is rejected by Discord', async () => {
+  const { get } = setup({ env: { DISCORD_TOKEN: 'DISCORD_TOKEN=bot-token' } });
+  const body = await (await get('/health')).json();
+  assert.equal(body.bot_token, 'rejected by Discord (401)');
+});
+
+test('health says when the bot is not in a server it should report roles for', async () => {
+  const { get } = setup({ env: { GUILD_IDS: `${GUILD}, 5555` } });
+  const body = await (await get('/health')).json();
+  assert.deepEqual(body.servers, { [GUILD]: 'ok', 5555: 'bot cannot see this server (404)' });
+});
+
+test('health says when secrets are missing', async () => {
+  const { get, calls } = setup({ env: { DISCORD_TOKEN: undefined, DISCORD_CLIENT_SECRET: undefined } });
+  assert.deepEqual(await (await get('/health')).json(), { client_secret: 'missing', bot_token: 'missing', servers: {} });
+  assert.equal(calls.length, 0);
+});
+
+test('health never contains a secret', async () => {
+  const { get } = setup();
+  assert.doesNotMatch(await (await get('/health')).text(), /bot-token|app-secret/);
+});
+
+test('stray spaces or a newline pasted around a secret are ignored', async () => {
+  const { calls, token } = setup({ env: { DISCORD_TOKEN: '  bot-token\r\n', DISCORD_CLIENT_SECRET: ' app-secret\n' } });
+  const claims = b64((await (await token()).json()).id_token.split('.')[1]);
+  assert.deepEqual(claims[`roles:${GUILD}`], ['r-shelf', 'r-other']);
+  assert.equal(new URLSearchParams(calls[0].init.body).get('client_secret'), 'app-secret');
 });

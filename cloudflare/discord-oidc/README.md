@@ -32,6 +32,10 @@ Based on the idea in [Erisa/discord-oidc-worker](https://github.com/Erisa/discor
 
 For role rules the bot must be a member of the server. It needs no permissions.
 
+## Checking it
+
+`https://<worker>/health` reports whether the client secret is set, whether Discord accepts the bot token, and whether the bot can see each server in `GUILD_IDS`. It never shows a secret.
+
 ## Tests
 
 `npm test` from the repository root. The Worker is tested against a stand-in for Discord's API, and the id_token is checked against the key that `/jwks.json` publishes.

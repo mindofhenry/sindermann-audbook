@@ -72,7 +72,7 @@ export function createWorker({ fetch = globalThis.fetch } = {}) {
     // Roles need the bot, and only make sense for servers the person is in.
     const roles = {};
     if (env.DISCORD_TOKEN) {
-      const wanted = String(env.GUILD_IDS ?? '').split(',').map((id) => id.trim()).filter((id) => guilds.includes(id));
+      const wanted = guildIds(env).filter((id) => guilds.includes(id));
       await Promise.all(wanted.map(async (guildId) => {
         const member = await getJson(`${API}/guilds/${guildId}/members/${user.id}`, `Bot ${env.DISCORD_TOKEN}`);
         if (member?.roles) roles[`roles:${guildId}`] = member.roles;
@@ -104,9 +104,33 @@ export function createWorker({ fetch = globalThis.fetch } = {}) {
     return json({ keys: [{ kty, n, e, alg: 'RS256', use: 'sig', kid: KID }] });
   }
 
+  // Says what is wrong (missing secret, rejected token, bot not in a server)
+  // without revealing anything secret.
+  async function health(env) {
+    const status = async (path) => {
+      const res = await fetch(`${API}${path}`, { headers: { authorization: `Bot ${env.DISCORD_TOKEN}` } });
+      return res.status;
+    };
+    const report = { client_secret: env.DISCORD_CLIENT_SECRET ? 'set' : 'missing', bot_token: 'missing', servers: {} };
+    if (env.DISCORD_TOKEN) {
+      const me = await status('/users/@me');
+      report.bot_token = me === 200 ? 'ok' : `rejected by Discord (${me})`;
+      if (me === 200) {
+        for (const id of guildIds(env)) {
+          const seen = await status(`/guilds/${id}`);
+          report.servers[id] = seen === 200 ? 'ok' : `bot cannot see this server (${seen})`;
+        }
+      }
+    }
+    return json(report);
+  }
+
   return {
-    async fetch(request, env) {
+    async fetch(request, rawEnv) {
+      // A secret pasted with a trailing newline or space would otherwise be rejected by Discord.
+      const env = { ...rawEnv, KV: rawEnv.KV, DISCORD_CLIENT_SECRET: rawEnv.DISCORD_CLIENT_SECRET?.trim(), DISCORD_TOKEN: rawEnv.DISCORD_TOKEN?.trim() };
       const url = new URL(request.url);
+      if (request.method === 'GET' && url.pathname === '/health') return health(env);
       if (request.method === 'GET' && (url.pathname === '/authorize' || url.pathname === '/authorize/guilds')) return authorize(url, env);
       if (request.method === 'POST' && url.pathname === '/token') return token(request, env);
       if (request.method === 'GET' && url.pathname === '/jwks.json') return jwks(env);
@@ -114,6 +138,8 @@ export function createWorker({ fetch = globalThis.fetch } = {}) {
     },
   };
 }
+
+const guildIds = (env) => String(env.GUILD_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean);
 
 // The signing key is made on first use and kept in KV.
 async function keyPair(KV) {
