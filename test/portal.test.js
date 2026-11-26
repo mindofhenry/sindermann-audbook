@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPortal } from '../src/portal/server.js';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createUploads } from '../src/portal/upload.js';
 import { bookA } from './helpers/fakes.js';
 
-async function setup({ addBook, prowlarr, seerr, now } = {}) {
+async function setup({ addBook, prowlarr, seerr, now, uploads, uploaders } = {}) {
   const added = [];
   const gates = [];
   const catalog = {
@@ -25,6 +29,8 @@ async function setup({ addBook, prowlarr, seerr, now } = {}) {
     prowlarr,
     seerr,
     now,
+    uploads,
+    uploaders,
     addBook: addBook ?? (async (type, plan) => {
       added.push([type, plan.title]);
       await new Promise((resolve) => gates.push(resolve)); // held until the test releases it
@@ -371,5 +377,125 @@ test('the page offers Movies and TV as kinds to search', async () => {
   const html = await (await fetch(`${base}/`)).text();
   assert.match(html, /name="type" value="movie"/);
   assert.match(html, /name="type" value="tv"/);
+  close();
+});
+
+// --- Uploads ---
+
+const HENRY = { 'cf-access-authenticated-user-email': 'Henry@Example.com' };
+const FRIEND = { 'cf-access-authenticated-user-email': 'friend@example.com' };
+
+async function uploadSetup({ uploaders = ['henry@example.com'], chunkBytes = 8 } = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'portal-upload-'));
+  const portal = await setup({ uploads: createUploads({ root, chunkBytes, minFreeBytes: 0 }), uploaders });
+  const json = (path, body, headers = HENRY) =>
+    fetch(`${portal.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const put = (query, bytes, headers = HENRY) =>
+    fetch(`${portal.base}/api/upload/chunk?${query}`, { method: 'PUT', headers: { 'content-type': 'application/octet-stream', ...headers }, body: bytes });
+  return { ...portal, root, json, put, close: async () => { portal.close(); await rm(root, { recursive: true, force: true }); } };
+}
+
+test('the page learns whether this person may upload', async () => {
+  const { base, close } = await uploadSetup();
+  const asHenry = await (await fetch(`${base}/api/library`, { headers: HENRY })).json();
+  assert.deepEqual(asHenry.upload, { maxBytes: 2 * 1024 ** 3 });
+  assert.equal((await (await fetch(`${base}/api/library`, { headers: FRIEND })).json()).upload, null);
+  assert.equal((await (await fetch(`${base}/api/library`)).json()).upload, null);
+  await close();
+
+  const off = await setup();
+  assert.equal((await (await fetch(`${off.base}/api/library`, { headers: HENRY })).json()).upload, null);
+  off.close();
+});
+
+test('a star lets everybody upload', async () => {
+  const { base, close } = await uploadSetup({ uploaders: ['*'] });
+  assert.ok((await (await fetch(`${base}/api/library`, { headers: FRIEND })).json()).upload);
+  await close();
+});
+
+test('a whole book can be uploaded through the web routes, then the library rescans', async () => {
+  const { root, json, put, library, close } = await uploadSetup();
+  const started = await json('/api/upload/start', { title: 'Dracula', files: [{ name: '01.mp3', size: 10 }] });
+  assert.equal(started.status, 201);
+  const { id, chunkBytes, files } = await started.json();
+  assert.equal(chunkBytes, 8);
+  assert.deepEqual(files, ['01.mp3']);
+
+  assert.deepEqual(await (await put(`id=${id}&file=0&offset=0`, Buffer.alloc(8, 'a'))).json(), { received: 8 });
+  assert.deepEqual(await (await put(`id=${id}&file=0&offset=8`, Buffer.alloc(2, 'b'))).json(), { received: 10 });
+  assert.equal(library.rescans, 0);
+
+  const finished = await json('/api/upload/finish', { id });
+  assert.deepEqual(await finished.json(), { state: 'added', title: 'Dracula' });
+  assert.equal(library.rescans, 1);
+  assert.equal(await readFile(join(root, 'Dracula', '01.mp3'), 'utf8'), 'aaaaaaaabb');
+  await close();
+});
+
+test('people who are not on the list cannot upload, and nothing is written', async () => {
+  const { root, json, put, close } = await uploadSetup();
+  const body = { title: 'Dracula', files: [{ name: '01.mp3', size: 1 }] };
+  for (const headers of [FRIEND, {}]) {
+    const res = await json('/api/upload/start', body, headers);
+    assert.equal(res.status, 403);
+    assert.match((await res.json()).error, /not allowed/i);
+  }
+  assert.equal((await put('id=x&file=0&offset=0', Buffer.alloc(1), FRIEND)).status, 403);
+  assert.equal((await json('/api/upload/finish', { id: 'x' }, FRIEND)).status, 403);
+  assert.deepEqual(await readdir(root), []);
+  await close();
+});
+
+test('upload routes answer 404 when uploads are switched off', async () => {
+  const { base, close } = await setup();
+  const res = await fetch(`${base}/api/upload/start`, { method: 'POST', headers: { 'content-type': 'application/json', ...HENRY }, body: '{}' });
+  assert.equal(res.status, 404);
+  close();
+});
+
+test('a piece out of order is a 409 that says where to resume', async () => {
+  const { json, put, close } = await uploadSetup();
+  const { id } = await (await json('/api/upload/start', { title: 'Book', files: [{ name: 'a.mp3', size: 10 }] })).json();
+  await put(`id=${id}&file=0&offset=0`, Buffer.alloc(8));
+  const res = await put(`id=${id}&file=0&offset=0`, Buffer.alloc(8));
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.equal(body.received, 8);
+  assert.match(body.error, /out of order/i);
+  await close();
+});
+
+test('upload problems come back with their own status and message', async () => {
+  const { json, put, close } = await uploadSetup();
+  const bad = await json('/api/upload/start', { title: 'Book', files: [{ name: 'notes.txt', size: 1 }] });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /audio/i);
+
+  const { id } = await (await json('/api/upload/start', { title: 'Book', files: [{ name: 'a.mp3', size: 40 }] })).json();
+  assert.equal((await put(`id=${id}&file=0&offset=0`, Buffer.alloc(9))).status, 413, 'a piece over the chunk size');
+  assert.equal((await put(`id=${id}&file=zero&offset=0`, Buffer.alloc(1))).status, 400);
+  assert.equal((await put(`id=${id}&file=0`, Buffer.alloc(1))).status, 400);
+  assert.equal((await json('/api/upload/finish', { id })).status, 400, 'finishing early');
+  assert.deepEqual(await (await json('/api/upload/cancel', { id })).json(), { state: 'cancelled' });
+  assert.equal((await json('/api/upload/finish', { id })).status, 404);
+  await close();
+});
+
+test('upload routes refuse other sites and the wrong content types', async () => {
+  const { base, json, put, close } = await uploadSetup();
+  const elsewhere = { ...HENRY, origin: 'https://evil.example' };
+  assert.equal((await json('/api/upload/start', { title: 'Book', files: [{ name: 'a.mp3', size: 1 }] }, elsewhere)).status, 403);
+  assert.equal((await put('id=x&file=0&offset=0', Buffer.alloc(1), elsewhere)).status, 403);
+  const form = await fetch(`${base}/api/upload/chunk?id=x&file=0&offset=0`, { method: 'PUT', headers: { 'content-type': 'text/plain', ...HENRY }, body: 'x' });
+  assert.equal(form.status, 415);
+  await close();
+});
+
+test('the homepage has an upload form, hidden until the page knows who is asking', async () => {
+  const { base, close } = await setup();
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /<section id="upload"[^>]*hidden/);
+  assert.match(html, /<input[^>]+type="file"[^>]+multiple/);
   close();
 });

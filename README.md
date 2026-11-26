@@ -61,7 +61,7 @@ cp data/audiobook.db backup.db  # back up positions and bookmarks
 
 ## Friends homepage
 
-The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added. Project Gutenberg ebook search exists behind `PORTAL_EBOOKS=on`, but Gutenberg refused requests from the test server, so it is off by default. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
+The same container serves a small web page on `127.0.0.1:8090`: search LibriVox audiobooks, press "Add to shelf", and the book downloads to the server and is playable in Discord straight away. Only public-domain items can be added from the search. Project Gutenberg ebook search exists behind `PORTAL_EBOOKS=on`, but Gutenberg refused requests from the test server, so it is off by default. Audiobookshelf runs beside it on `127.0.0.1:13378` as the web player and ebook reader for the same folders.
 
 ### Movies and TV (optional)
 
@@ -71,6 +71,16 @@ Set `JELLYSEERR_URL` and `JELLYSEERR_API_KEY` and the search box gains **Movies*
 - **Limit.** Each person can file 10 requests a day from the homepage.
 - **What friends see.** Title, year and status only. The API key stays on the server.
 - **Behind Cloudflare Access?** Use `JELLYSEERR_CF_ACCESS_CLIENT_ID` and `JELLYSEERR_CF_ACCESS_CLIENT_SECRET`, as for Prowlarr.
+
+### Upload your own books (optional)
+
+Set `UPLOAD_EMAILS` in `.env` and the people you name get an "Upload a book" form: type a title, pick the audio files (one per chapter, or a single `.m4b`), and the book is on the shelf and playable in Discord when the bar reaches the end.
+
+- **You choose who uploads.** `UPLOAD_EMAILS=you@example.com,friend@example.com` names them by the email they log in with; `*` means everybody who can open the page. Everyone else never sees the form, and the server refuses them. This relies on Cloudflare Access, which tells the page who is asking.
+- **Big files work behind Cloudflare.** Cloudflare refuses request bodies over 100 MB on the free plan, so the page sends each file in 16 MB pieces and resends a piece that fails.
+- **Limits.** Audio files only, 2 GB a book (`UPLOAD_MAX_GB`), two uploads at a time, and never below 2 GB of free disk. A half-finished upload is invisible to the bot and is deleted after 30 idle minutes or at the next restart.
+
+The log prints `uploads on for 1 person, up to 2.0 GB a book` when it is active.
 
 ### Prowlarr search (optional)
 
@@ -123,7 +133,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-293 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+320 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

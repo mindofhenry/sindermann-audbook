@@ -24,8 +24,8 @@ function safeSegment(text, fallback) {
   return cleaned || fallback;
 }
 
-export const folderFor = (plan) => safeSegment(plan.title, 'Untitled');
-const fileNameFor = (name) => safeSegment(String(name).split(/[\\/]/).pop(), 'file');
+export const folderFor = (plan, fallback = 'Untitled') => safeSegment(plan.title, fallback);
+export const fileNameFor = (name) => safeSegment(String(name).split(/[\\/]/).pop(), 'file');
 
 export async function addToShelf(plan, root, options = {}) {
   const { allowedHosts, maxBytes = 2 * GB, minFreeBytes = 2 * GB, fetch = globalThis.fetch, onProgress = () => {} } = options;
