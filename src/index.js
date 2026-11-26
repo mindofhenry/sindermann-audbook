@@ -1,5 +1,5 @@
 // Entry point: wires config, database, library, voice and commands to Discord.
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
 import { generateDependencyReport } from '@discordjs/voice';
 import { createCommands, definitions } from './commands.js';
 import { loadConfig } from './config.js';
@@ -57,7 +57,7 @@ const notify = (guildId, text) => {
 let presence;
 const sessions = new SessionManager({ db, notify, onLeave: (guildId) => presence.forget(guildId) });
 presence = createPresenceWatcher({ sessions, leaveAfterMs: config.emptyLeaveMs });
-const commands = createCommands({ db, sessions, library });
+const commands = createCommands({ db, sessions, library, shelfUrl: config.shelfUrl });
 
 client.once(Events.ClientReady, async (ready) => {
   console.log(`[bot] logged in as ${ready.user.tag}`);
@@ -94,7 +94,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   try {
     // Joining voice can take longer than Discord's 3 second reply window.
-    await interaction.deferReply();
+    await interaction.deferReply(commands.isPrivate(interaction.commandName) ? { flags: MessageFlags.Ephemeral } : undefined);
     if (interaction.guildId) lastChannel.set(interaction.guildId, interaction.channelId);
     const content = await commands.execute(interaction);
     await interaction.editReply({ content, allowedMentions: { parse: [] } });

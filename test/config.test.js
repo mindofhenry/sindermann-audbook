@@ -142,3 +142,9 @@ test('malformed upload settings are rejected with the name of the setting', () =
   assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: '*', UPLOAD_MAX_GB: 'lots' }), /UPLOAD_MAX_GB/);
   assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: '*', UPLOAD_MAX_GB: '0' }), /UPLOAD_MAX_GB/);
 });
+
+test('the shelf address for /help is optional and must be a web address', () => {
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc' }).shelfUrl, null);
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc', SHELF_URL: ' https://friends.example ' }).shelfUrl, 'https://friends.example');
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', SHELF_URL: 'friends.example' }), /SHELF_URL/);
+});

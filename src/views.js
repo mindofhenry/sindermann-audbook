@@ -4,6 +4,34 @@ import { formatTime } from './format.js';
 
 const LIMIT = 1900; // headroom under Discord's 2000-character message cap
 
+/** What /help says: how to start, then every command in the order you need them. */
+export function helpText({ shelfUrl = null } = {}) {
+  const lines = [
+    '**Audiobook bot**',
+    '1. Join a voice channel.',
+    '2. `/play` and pick a book. It picks up where this server left off.',
+    '3. `/pause`, `/resume` or `/stop`. Your place is saved every time.',
+    '',
+    '**Move around a book**',
+    '`/chapter` pick a chapter from the list, or type its number or title',
+    '`/chapters` list the chapters',
+    '`/next` `/prev` one chapter forward or back',
+    '`/forward` `/back` 30 seconds, or a number you choose',
+    '`/seek` jump to a time, for example `1:23:45` or `90m`',
+    '`/nowplaying` book, chapter and position',
+    '',
+    '**More**',
+    '`/library` every book with your progress',
+    '`/speed` 0.75x to 2x, remembered for this server',
+    '`/bookmark add` `list` `goto` `remove` save spots in the current book',
+    '`/rescan` reload the library after adding books (needs Manage Server)',
+    '`/help` this message',
+  ];
+  // Angle brackets keep Discord from unfurling the link into a preview card.
+  if (shelfUrl) lines.push('', `**Add a book**: search or upload at <${shelfUrl}>`);
+  return lines.join('\n');
+}
+
 export function statusText(status) {
   const { book, position, duration, chapterIndex, chapter, chapterCount, state, speed } = status;
   const percent = duration > 0 ? Math.floor((position / duration) * 100) : 0;
