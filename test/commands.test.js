@@ -5,7 +5,7 @@ import { buildTimeline } from '../src/timeline.js';
 import { definitions, createCommands } from '../src/commands.js';
 import { bookA, bookB, fakeSessions, interaction } from './helpers/fakes.js';
 
-function setup({ books = [bookA(), bookB()] } = {}) {
+function setup({ books = [bookA(), bookB()], shelfUrl } = {}) {
   const db = openDb(':memory:');
   const sessions = fakeSessions(db);
   const library = {
@@ -13,7 +13,7 @@ function setup({ books = [bookA(), bookB()] } = {}) {
     rescans: 0,
     async rescan() { this.rescans += 1; return { count: this.books.length, warnings: [] }; },
   };
-  const commands = createCommands({ db, sessions, library });
+  const commands = createCommands({ db, sessions, library, shelfUrl });
   const run = (name, options, extra) => commands.execute(interaction(name, options, extra));
   return { db, sessions, library, commands, run };
 }
@@ -29,7 +29,7 @@ async function playing(position) {
 test('every command is registered once with a valid definition', () => {
   const names = definitions.map((d) => d.name).sort();
   assert.deepEqual(names, [
-    'back', 'bookmark', 'chapter', 'chapters', 'forward', 'library', 'next', 'nowplaying',
+    'back', 'bookmark', 'chapter', 'chapters', 'forward', 'help', 'library', 'next', 'nowplaying',
     'pause', 'play', 'prev', 'rescan', 'resume', 'seek', 'speed', 'stop',
   ]);
   assert.ok(definitions.every((d) => d.description.length > 0 && d.description.length <= 100));
@@ -469,4 +469,40 @@ test('before any book has been played /chapter has nothing to offer', async () =
   const { run, commands } = setup();
   assert.deepEqual(commands.autocomplete(interaction('chapter', {}, { focused: '' })), []);
   assert.match(await run('chapter', { number: 1 }), /nothing is playing/i);
+});
+
+// --- help -----------------------------------------------------------------
+
+test('help names every command, so a new command cannot be left out of it', async () => {
+  const { run } = setup();
+  const reply = await run('help');
+  for (const { name } of definitions) assert.match(reply, new RegExp(`/${name}\\b`), `/${name} is missing from /help`);
+  assert.ok(reply.length <= 2000, `help is ${reply.length} characters, over Discord's limit`);
+});
+
+test('help starts with how to get a book playing', async () => {
+  const { run } = setup();
+  const reply = await run('help');
+  assert.match(reply, /voice channel/i);
+  assert.ok(reply.indexOf('/play') < reply.indexOf('/bookmark'), 'the basics come before the extras');
+});
+
+test('help works with nothing playing and without being in voice', async () => {
+  const { run, sessions } = setup();
+  assert.match(await run('help', {}, { inVoice: false }), /\/play/);
+  assert.equal(sessions.get('g1'), null);
+});
+
+test('help links the shelf only when its address is set', async () => {
+  assert.doesNotMatch(await setup().run('help'), /https?:/);
+  const reply = await setup({ shelfUrl: 'https://friends.example' }).run('help');
+  assert.match(reply, /<https:\/\/friends\.example>/, 'angle brackets stop Discord from adding a preview card');
+  assert.ok(reply.length <= 2000);
+});
+
+test('help is answered privately, playback commands are not', () => {
+  const { commands } = setup();
+  assert.equal(commands.isPrivate('help'), true);
+  assert.equal(commands.isPrivate('play'), false);
+  assert.equal(commands.isPrivate('nowplaying'), false);
 });

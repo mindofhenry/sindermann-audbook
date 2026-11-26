@@ -25,6 +25,11 @@ export function loadConfig(env = process.env) {
     throw new Error('LISTEN_URL must start with http:// or https://.');
   }
 
+  const shelfUrl = env.SHELF_URL?.trim() || null;
+  if (shelfUrl && !/^https?:\/\//i.test(shelfUrl)) {
+    throw new Error('SHELF_URL must start with http:// or https://.');
+  }
+
   return {
     token,
     prowlarr: loadProwlarr(env),
@@ -42,6 +47,8 @@ export function loadConfig(env = process.env) {
     ebooksDir: env.EBOOKS_DIR?.trim() || './ebooks',
     // Optional link to a web player such as Audiobookshelf.
     listenUrl,
+    // Optional public address of the friends homepage, shown by /help.
+    shelfUrl,
     upload: loadUpload(env),
   };
 }

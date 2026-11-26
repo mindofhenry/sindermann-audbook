@@ -25,6 +25,7 @@ It also pauses itself when the voice channel empties, and resumes when someone c
 | `/speed rate` | 0.75x to 2x, remembered per server |
 | `/bookmark add [label]` `list` `goto` `remove` | Bookmarks for the current book |
 | `/rescan` | Reload the library after adding books (Manage Server permission) |
+| `/help` | How to get a book playing and what every command does. Only you see the reply |
 
 ## Install
 
@@ -133,7 +134,7 @@ Discord ──slash command──> commands.js ──> Session (one per server)
 npm install && npm test
 ```
 
-320 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
+326 tests, written first. They build a real library with ffmpeg (MP3 folder, nested folder, m4b with chapters), run the real ffmpeg pipeline and the real `@discordjs/voice` player, and drive every slash command through a fake interaction. Only the network connection to Discord is replaced.
 
 ## Limits
 

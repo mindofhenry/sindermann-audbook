@@ -6,10 +6,12 @@ import { InteractionContextType, PermissionFlagsBits, SlashCommandBuilder } from
 import { formatTime, parseTime } from './format.js';
 import { findBook, searchBooks } from './library.js';
 import { chapterIndexAt } from './timeline.js';
-import { bookmarksText, chaptersText, libraryText, statusText } from './views.js';
+import { bookmarksText, chaptersText, helpText, libraryText, statusText } from './views.js';
 
 const NOTHING = 'Nothing is playing. Use /play to start a book.';
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+// Answered only to the person who asked, so the channel is not filled with them.
+const PRIVATE = new Set(['help']);
 
 const command = (name, description) =>
   new SlashCommandBuilder().setName(name).setDescription(description).setContexts(InteractionContextType.Guild);
@@ -48,12 +50,14 @@ export const definitions = [
     .addSubcommand((s) => s.setName('remove').setDescription('Delete a bookmark').addIntegerOption(bookmarkPicker)),
   command('rescan', 'Reload the library after adding or removing books')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  command('help', 'How to play a book, and what every command does'),
 ].map((builder) => builder.toJSON());
 
 /**
- * @param {{ db: object, sessions: object, library: { books: object[], rescan: () => Promise<{count:number, warnings:string[]}> } }} ctx
+ * @param {{ db: object, sessions: object, shelfUrl?: string|null,
+ *           library: { books: object[], rescan: () => Promise<{count:number, warnings:string[]}> } }} ctx
  */
-export function createCommands({ db, sessions, library }) {
+export function createCommands({ db, sessions, library, shelfUrl = null }) {
   // Sessions with a loaded book only; an idle session counts as "nothing".
   const active = (guildId) => {
     const session = sessions.get(guildId);
@@ -92,6 +96,8 @@ export function createCommands({ db, sessions, library }) {
   });
 
   const handlers = {
+    help: () => helpText({ shelfUrl }),
+
     library: (i) => libraryText(library.books, db.allProgress(i.guildId)),
 
     play: async (i) => {
@@ -224,6 +230,9 @@ export function createCommands({ db, sessions, library }) {
       const handler = handlers[interaction.commandName];
       return handler ? handler(interaction) : 'Unknown command.';
     },
+
+    /** True when the reply should be visible only to the person who asked. */
+    isPrivate: (commandName) => PRIVATE.has(commandName),
 
     /** Returns up to 25 {name, value} choices for the option being typed. */
     autocomplete(interaction) {
