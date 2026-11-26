@@ -99,8 +99,11 @@ function renderResults() {
 
 async function renderShelf() {
   try {
-    const { books, listenUrl, types, prowlarr } = await api('/api/library');
+    const { books, listenUrl, types, prowlarr, upload } = await api('/api/library');
     $('prowlarr').hidden = !prowlarr;
+    $('upload').hidden = !upload;
+    uploadLimit = upload ? upload.maxBytes : 0;
+    $('upload-limit').textContent = upload ? `Up to ${size(upload.maxBytes)} a book.` : '';
     // Offer the audiobook/ebook choice only when both are switched on.
     const kinds = document.querySelector('.kinds');
     kinds.hidden = types.length < 2;
@@ -220,6 +223,118 @@ $('prowlarr-search').addEventListener('submit', async (event) => {
         }))));
   } catch (err) {
     tell(err.message, true);
+  }
+});
+
+// Uploading your own book. Cloudflare refuses large request bodies, so each
+// file goes up in pieces; a piece that fails is sent again a few times.
+let uploadLimit = 0;
+let uploadId = null;
+let uploadStopped = false;
+const TRIES = 4;
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function sendPiece(id, index, offset, blob) {
+  let problem;
+  for (let attempt = 1; attempt <= TRIES; attempt++) {
+    if (uploadStopped) throw new Error('Upload cancelled.');
+    try {
+      const res = await fetch(`/api/upload/chunk?id=${encodeURIComponent(id)}&file=${index}&offset=${offset}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: blob,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) return body.received;
+      // The server already has this piece (our last answer got lost): carry on from there.
+      if (res.status === 409 && Number.isInteger(body.received) && body.received > offset) return body.received;
+      problem = new Error(body.error || 'The upload was interrupted.');
+      if (res.status < 500 && res.status !== 409 && res.status !== 408) throw Object.assign(problem, { final: true });
+    } catch (err) {
+      if (err.final) throw err;
+      problem = err instanceof TypeError ? new Error('The connection dropped during the upload.') : err;
+    }
+    await pause(1500 * attempt);
+  }
+  throw problem;
+}
+
+$('upload-files').addEventListener('change', (event) => {
+  const [first] = event.target.files;
+  const title = $('upload-title');
+  if (first && event.target.files.length === 1 && !title.value.trim()) title.value = first.name.replace(/\.[^.]+$/, '');
+});
+
+$('upload-cancel').addEventListener('click', () => { uploadStopped = true; });
+
+$('upload-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const line = $('upload-status');
+  const bar = $('upload-progress');
+  const submit = event.target.querySelector('button[type="submit"]');
+  const cancel = $('upload-cancel');
+  const tell = (text, problem = false) => {
+    line.textContent = text;
+    line.classList.toggle('problem', problem);
+  };
+  const title = $('upload-title').value.trim();
+  const files = [...$('upload-files').files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  if (!title || files.length === 0) return;
+  if (uploadLimit && total > uploadLimit) return tell(`These files add up to ${size(total)}. The limit is ${size(uploadLimit)} a book.`, true);
+
+  submit.disabled = true;
+  cancel.hidden = false;
+  bar.hidden = false;
+  bar.value = 0;
+  uploadStopped = false;
+  const warn = (leave) => { leave.preventDefault(); };
+  window.addEventListener('beforeunload', warn);
+  try {
+    tell('Starting the upload');
+    const started = await api('/api/upload/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title, files: files.map((file) => ({ name: file.name, size: file.size })) }),
+    });
+    uploadId = started.id;
+    let sent = 0;
+    for (const [index, file] of files.entries()) {
+      let offset = 0;
+      while (offset < file.size) {
+        const next = await sendPiece(started.id, index, offset, file.slice(offset, offset + started.chunkBytes));
+        sent += next - offset;
+        offset = next;
+        bar.value = sent / total;
+        tell(`Uploading file ${index + 1} of ${files.length}: ${Math.floor((sent / total) * 100)}% (${size(sent)} of ${size(total)})`);
+      }
+    }
+    tell('Putting it on the shelf');
+    const done = await api('/api/upload/finish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: started.id }),
+    });
+    uploadId = null;
+    tell(`"${done.title}" is on the shelf. In Discord: /play ${done.title}`);
+    event.target.reset();
+    renderShelf();
+  } catch (err) {
+    tell(err.message, true);
+    if (uploadId) {
+      // Free the server's half-finished copy; if this fails it expires by itself.
+      api('/api/upload/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: uploadId }),
+      }).catch(() => {});
+      uploadId = null;
+    }
+  } finally {
+    window.removeEventListener('beforeunload', warn);
+    submit.disabled = false;
+    cancel.hidden = true;
+    bar.hidden = true;
   }
 });
 

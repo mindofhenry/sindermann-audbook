@@ -42,7 +42,19 @@ export function loadConfig(env = process.env) {
     ebooksDir: env.EBOOKS_DIR?.trim() || './ebooks',
     // Optional link to a web player such as Audiobookshelf.
     listenUrl,
+    upload: loadUpload(env),
   };
+}
+
+// Optional upload button on the homepage. Off until somebody is named.
+function loadUpload(env) {
+  const emails = (env.UPLOAD_EMAILS ?? '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+  if (emails.some((email) => email !== '*' && !/^[^@\s]+@[^@\s]+$/.test(email))) {
+    throw new Error('UPLOAD_EMAILS must be email addresses separated by commas, or * for everybody who can open the page.');
+  }
+  const gb = Number(env.UPLOAD_MAX_GB?.trim() || 2);
+  if (!Number.isFinite(gb) || gb <= 0 || gb > 50) throw new Error('UPLOAD_MAX_GB must be a size in gigabytes between 0 and 50, for example 2.');
+  return emails.length ? { emails, maxBytes: Math.round(gb * 1024 ** 3) } : null;
 }
 
 // Optional read-only Prowlarr search on the homepage. Off without an address.

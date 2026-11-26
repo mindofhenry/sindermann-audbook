@@ -38,6 +38,25 @@
       <ol id="shelf" class="cards"></ol>
     </section>
 
+    <section id="upload" aria-labelledby="upload-heading" hidden>
+      <h2 id="upload-heading">Upload a book</h2>
+      <p class="note">Your own audio files: one file per chapter, or a single .m4b. <span id="upload-limit"></span> Keep this page open until it says the book is on the shelf.</p>
+      <form id="upload-form">
+        <div class="catalog-line">
+          <label for="upload-title" class="visually-hidden">Book title</label>
+          <input id="upload-title" name="title" type="text" placeholder="Book title" autocomplete="off" maxlength="120" required>
+        </div>
+        <div class="upload-line">
+          <label for="upload-files" class="visually-hidden">Audio files</label>
+          <input id="upload-files" name="files" type="file" multiple required accept="audio/*,.mp3,.m4b,.m4a,.aac,.ogg,.opus,.flac,.wav">
+          <button type="submit">Upload</button>
+          <button type="button" id="upload-cancel" class="quiet" hidden>Cancel</button>
+        </div>
+      </form>
+      <progress id="upload-progress" max="1" value="0" hidden></progress>
+      <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
     <section id="prowlarr" aria-labelledby="prowlarr-heading" hidden>
       <h2 id="prowlarr-heading">Indexer search</h2>
       <p class="note">Looks up audiobooks in Prowlarr. Search only: nothing here can be added to the shelf.</p>
@@ -53,7 +72,7 @@
     </section>
 
     <footer>
-      <p>Audiobooks on the shelf are LibriVox recordings from the Internet Archive, all in the public domain.</p>
+      <p>Audiobooks added from the search are LibriVox recordings from the Internet Archive, all in the public domain.</p>
     </footer>
   </main>
   <script src="/app.js" defer></script>

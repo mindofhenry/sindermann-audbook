@@ -125,3 +125,20 @@ test('incomplete or malformed Jellyseerr settings are rejected with the name of 
   assert.throws(() => loadConfig({ ...base, JELLYSEERR_USER_ID: 'henry' }), /JELLYSEERR_USER_ID/);
   assert.throws(() => loadConfig({ ...base, JELLYSEERR_CF_ACCESS_CLIENT_ID: 'id' }), /JELLYSEERR_CF_ACCESS/);
 });
+
+test('uploads are off until somebody is named', () => {
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc' }).upload, null);
+  assert.equal(loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: ' , ' }).upload, null);
+});
+
+test('upload settings are read from the environment', () => {
+  const config = loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: ' Henry@Example.com, friend@example.com ', UPLOAD_MAX_GB: '0.5' });
+  assert.deepEqual(config.upload, { emails: ['henry@example.com', 'friend@example.com'], maxBytes: 536870912 });
+  assert.deepEqual(loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: '*' }).upload, { emails: ['*'], maxBytes: 2 * 1024 ** 3 });
+});
+
+test('malformed upload settings are rejected with the name of the setting', () => {
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: 'henry' }), /UPLOAD_EMAILS/);
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: '*', UPLOAD_MAX_GB: 'lots' }), /UPLOAD_MAX_GB/);
+  assert.throws(() => loadConfig({ DISCORD_TOKEN: 'abc', UPLOAD_EMAILS: '*', UPLOAD_MAX_GB: '0' }), /UPLOAD_MAX_GB/);
+});

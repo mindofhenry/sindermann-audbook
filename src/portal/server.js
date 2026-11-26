@@ -4,6 +4,7 @@
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { UploadError } from './upload.js';
 
 const asset = (name) => readFileSync(fileURLToPath(new URL(`./public/${name}`, import.meta.url)));
 const STATIC = {
@@ -24,7 +25,7 @@ const MAX_REQUESTS_PER_DAY = 10; // per person, so one click-happy friend cannot
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, extra = undefined) { super(message); this.status = status; this.extra = extra; }
 }
 
 /**
@@ -32,19 +33,44 @@ class HttpError extends Error {
  *           addBook: (type: string, plan: object, onProgress: Function) => Promise<{status: string}>,
  *           prowlarr?: { search: (query: string) => Promise<object[]> } | null,
  *           seerr?: { search: Function, request: Function } | null,
+ *           uploads?: object | null, uploaders?: string[],
  *           now?: () => number, log?: Function }} deps
  */
-export function createPortal({ catalog, library, addBook, listenUrl = null, prowlarr = null, seerr = null, now = Date.now, log = () => {} }) {
+export function createPortal({ catalog, library, addBook, listenUrl = null, prowlarr = null, seerr = null, uploads = null, uploaders = [], now = Date.now, log = () => {} }) {
   const jobs = new Map(); // key -> job, insertion order = age
   let chain = Promise.resolve(); // downloads run one at a time
   let prowlarrSearches = 0;
   const requestTimes = new Map(); // person -> times of their requests in the last day
 
   // A browser on another site must not be able to trigger anything here.
-  function guardPost(req) {
-    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Send JSON.');
+  function guardOrigin(req) {
     if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) {
       throw new HttpError(403, 'Requests from other sites are not allowed.');
+    }
+  }
+  function guardPost(req) {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Send JSON.');
+    guardOrigin(req);
+  }
+
+  // Uploading is for the people named in UPLOAD_EMAILS ("*" means everybody
+  // Cloudflare Access lets in). Access puts the person's email on the request.
+  const emailOf = (req) => String(req.headers['cf-access-authenticated-user-email'] ?? '').trim().toLowerCase();
+  const mayUpload = (req) => Boolean(uploads) && (uploaders.includes('*') || (emailOf(req) !== '' && uploaders.includes(emailOf(req))));
+  function uploader(req) {
+    if (!uploads) throw new HttpError(404, 'Uploads are not set up.');
+    if (!mayUpload(req)) throw new HttpError(403, 'You are not allowed to upload books.');
+    return emailOf(req) || 'unknown';
+  }
+  // Upload problems carry their own status, and sometimes where to resume.
+  async function uploading(work) {
+    try {
+      return await work();
+    } catch (err) {
+      if (err instanceof UploadError) throw new HttpError(err.status, err.message, err.extra);
+      // The browser went away mid-piece. Nothing to report: it will send the piece again.
+      if (err?.code === 'ECONNRESET' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE') throw new HttpError(400, 'The connection dropped during the upload.');
+      throw err;
     }
   }
 
@@ -127,6 +153,46 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, prow
 
     'GET /api/jobs': async () => ({ jobs: [...jobs.values()].reverse() }),
 
+    // Your own audiobooks, sent in pieces (see upload.js).
+    'POST /api/upload/start': async (req) => {
+      const by = uploader(req);
+      guardPost(req);
+      const { title, files } = await readJson(req, 256 * 1024);
+      const started = await uploading(() => uploads.start({ title, files, by }));
+      log(`[portal] upload started: "${title}" (${started.files.length} files) for ${by}`);
+      return { status: 201, ...started };
+    },
+
+    'PUT /api/upload/chunk': async (req, url) => {
+      const by = uploader(req);
+      guardOrigin(req);
+      if (!/^application\/octet-stream\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Send the bytes as application/octet-stream.');
+      const number = (name) => (/^\d{1,15}$/.test(url.searchParams.get(name) ?? '') ? Number(url.searchParams.get(name)) : NaN);
+      const [file, offset] = [number('file'), number('offset')];
+      if (Number.isNaN(file) || Number.isNaN(offset)) throw new HttpError(400, 'Say which file and where the piece starts.');
+      // Refuse an oversized piece before reading it, while we can still answer.
+      if (Number(req.headers['content-length'] ?? 0) > uploads.chunkBytes) throw new HttpError(413, `Send at most ${uploads.chunkBytes} bytes per chunk.`);
+      return uploading(() => uploads.chunk({ id: url.searchParams.get('id'), file, offset, by }, req));
+    },
+
+    'POST /api/upload/finish': async (req) => {
+      const by = uploader(req);
+      guardPost(req);
+      const { id } = await readJson(req);
+      const { title } = await uploading(() => uploads.finish({ id, by }));
+      await library.rescan();
+      log(`[portal] uploaded: "${title}" for ${by}`);
+      return { state: 'added', title };
+    },
+
+    'POST /api/upload/cancel': async (req) => {
+      const by = uploader(req);
+      guardPost(req);
+      const { id } = await readJson(req);
+      await uploading(() => uploads.cancel({ id, by }));
+      return { state: 'cancelled' };
+    },
+
     // Read-only: lists what Prowlarr's indexers have. Nothing can be added from it.
     'GET /api/prowlarr': async (req, url) => {
       if (!prowlarr) throw new HttpError(404, 'Prowlarr search is not set up.');
@@ -141,9 +207,10 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, prow
       }
     },
 
-    'GET /api/library': async () => ({
+    'GET /api/library': async (req) => ({
       listenUrl,
       prowlarr: Boolean(prowlarr),
+      upload: mayUpload(req) ? { maxBytes: uploads.maxBytes } : null,
       types: [...catalog.types, ...(seerr ? MEDIA_TYPES : [])],
       books: library.books.map((b) => ({ title: b.title, duration: Math.round(b.timeline.duration), chapters: b.timeline.chapters.length })),
     }),
@@ -167,18 +234,19 @@ export function createPortal({ catalog, library, addBook, listenUrl = null, prow
       send(status, 'application/json', JSON.stringify(body));
     } catch (err) {
       if (!(err instanceof HttpError)) log(`[portal] ${req.method} ${url.pathname}: ${err.stack ?? err}`);
-      send(err.status ?? 500, 'application/json', JSON.stringify({ error: err instanceof HttpError ? err.message : 'Something went wrong on the server.' }));
+      const known = err instanceof HttpError;
+      send(known ? err.status : 500, 'application/json', JSON.stringify({ ...(known ? err.extra : null), error: known ? err.message : 'Something went wrong on the server.' }));
     }
   });
 
   return { server };
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 2048) {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 2048) throw new HttpError(413, 'Request too large.');
+    if (raw.length > limit) throw new HttpError(413, 'Request too large.');
   }
   try {
     return JSON.parse(raw);

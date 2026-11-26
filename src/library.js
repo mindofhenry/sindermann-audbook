@@ -14,7 +14,7 @@ const AUDIO = new Set(['.mp3', '.m4b', '.m4a', '.aac', '.ogg', '.opus', '.flac',
 const MAX_DEPTH = 4;
 
 const natural = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-const isAudio = (name) => AUDIO.has(extname(name).toLowerCase());
+export const isAudio = (name) => AUDIO.has(extname(name).toLowerCase());
 const stem = (name) => basename(name, extname(name));
 
 export async function scanLibrary(root, { onWarning = () => {} } = {}) {

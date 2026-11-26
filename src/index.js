@@ -10,6 +10,7 @@ import { createPortal } from './portal/server.js';
 import { createProwlarr } from './portal/prowlarr.js';
 import { createSeerr } from './portal/seerr.js';
 import { addToShelf } from './portal/shelf.js';
+import { createUploads } from './portal/upload.js';
 import { createPresenceWatcher } from './presence.js';
 import { registerCommands } from './register.js';
 import { SessionManager } from './voice.js';
@@ -121,8 +122,12 @@ if (config.portalPort) {
     audiobook: { root: config.booksDir, allowedHosts: ['archive.org'] },
     ebook: { root: config.ebooksDir, allowedHosts: ['gutenberg.org'] },
   };
+  const uploads = config.upload ? createUploads({ root: config.booksDir, maxBytes: config.upload.maxBytes }) : null;
+  await uploads?.sweep();
   portal = createPortal({
     catalog: createCatalog({ types: config.portalTypes }),
+    uploads,
+    uploaders: config.upload?.emails ?? [],
     library,
     listenUrl: config.listenUrl,
     prowlarr: config.prowlarr ? createProwlarr(config.prowlarr) : null,
@@ -133,6 +138,7 @@ if (config.portalPort) {
   portal.server.listen(config.portalPort, () => console.log(`[portal] homepage listening on port ${config.portalPort}`));
   if (config.prowlarr) console.log(`[portal] Prowlarr search on (${new URL(config.prowlarr.url).host})`);
   if (config.jellyseerr) console.log(`[portal] movies and TV on (${new URL(config.jellyseerr.url).host})`);
+  if (config.upload) console.log(`[portal] uploads on for ${config.upload.emails.includes('*') ? 'everybody' : `${config.upload.emails.length} ${config.upload.emails.length === 1 ? 'person' : 'people'}`}, up to ${(config.upload.maxBytes / 1024 ** 3).toFixed(1)} GB a book`);
 }
 
 const saver = setInterval(() => sessions.saveAll(), SAVE_EVERY_MS);
